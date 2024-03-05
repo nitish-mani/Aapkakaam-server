@@ -3,10 +3,10 @@ const mongoose = require("mongoose");
 const userRoute = require("./routes/user");
 const vendorRoute = require("./routes/vendor");
 const employeeRoute = require("./routes/employee");
-
 const bookingsRoute = require("./routes/bookings");
 const shareRoute = require("./routes/share");
 const path = require("path");
+require("dotenv").config();
 
 const MONGODB_URI = process.env.MONGODB_URL_1;
 
