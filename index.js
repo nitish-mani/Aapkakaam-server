@@ -45,6 +45,10 @@ app.use((error, req, res, next) => {
   res.status(status).json({ message: message, data: data });
 });
 
+app.use("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
+});
+
 async function main() {
   await mongoose.connect(MONGODB_URI);
 }
