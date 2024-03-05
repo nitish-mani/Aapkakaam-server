@@ -8,8 +8,7 @@ const bookingsRoute = require("./routes/bookings");
 const shareRoute = require("./routes/share");
 const path = require("path");
 
-const MONGODB_URI =
-  "mongodb+srv://nitishmani63:7gk4uNOW3Db0t5XV@cluster1.wqy2gdz.mongodb.net/aapkakaam?retryWrites=true&w=majority";
+const MONGODB_URI = process.env.MONGODB_URL_1;
 
 const app = express();
 
