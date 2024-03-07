@@ -38,6 +38,7 @@ exports.user_controller_patch_address = (req, res, next) => {
         verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
         address: loadedUser.address,
+        gender: loadedVendor.gender,
         message: "Address Updated Successfully ",
       });
     })
@@ -76,6 +77,7 @@ exports.user_controller_patch_name = (req, res, next) => {
         verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
         address: loadedUser.address,
+        gender: loadedVendor.gender,
         message: "Name Updated Successfully ",
       });
     })
@@ -114,6 +116,7 @@ exports.user_controller_patch_phoneNo = (req, res, next) => {
         verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
         address: loadedUser.address,
+        gender: loadedVendor.gender,
         message: "Phone Number Updated Successfully ",
       });
     })
@@ -151,6 +154,7 @@ exports.user_controller_patch_email = (req, res, next) => {
         verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
         address: loadedUser.address,
+        gender: loadedVendor.gender,
         message: "Email Updated Successfully ",
       });
     })
@@ -241,6 +245,7 @@ exports.user_controller_getUser = (req, res, next) => {
         phoneNo: loadedUser.phoneNo,
         verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
+        gender: loadedVendor.gender,
         address: loadedUser.address,
       });
     })

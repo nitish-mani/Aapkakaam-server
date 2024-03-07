@@ -132,6 +132,7 @@ exports.login = (req, res, next) => {
         phoneNo: loadedVendor.phoneNo,
         verifyPhoneNo: loadedVendor.verifyPhoneNo,
         type: loadedVendor.type,
+        gender: loadedVendor.gender,
         address: loadedVendor.address,
         balance: loadedVendor.balance,
         message: "Vendor logged In Successfully ",

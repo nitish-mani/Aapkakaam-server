@@ -126,6 +126,7 @@ exports.login = (req, res, next) => {
         verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
         address: loadedUser.address,
+        gender: loadedVendor.gender,
         message: "User logged In Successfully ",
       });
     })

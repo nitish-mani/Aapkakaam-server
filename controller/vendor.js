@@ -39,6 +39,7 @@ exports.vendor_controller_patch_address = (req, res, next) => {
         phoneNo: loadedVendor.phoneNo,
         verifyPhoneNo: loadedVendor.verifyPhoneNo,
         type: loadedVendor.type,
+        gender: loadedVendor.gender,
         balance: loadedVendor.balance,
         address: loadedVendor.address,
         message: "Address Updated Successfully ",
@@ -78,6 +79,7 @@ exports.vendor_controller_patch_name = (req, res, next) => {
         phoneNo: loadedVendor.phoneNo,
         verifyPhoneNo: loadedVendor.verifyPhoneNo,
         type: loadedVendor.type,
+        gender: loadedVendor.gender,
         balance: loadedVendor.balance,
         address: loadedVendor.address,
         message: "Name Updated Successfully ",
@@ -116,6 +118,7 @@ exports.vendor_controller_patch_phoneNo = (req, res, next) => {
         phoneNo: loadedVendor.phoneNo,
         verifyPhoneNo: loadedVendor.verifyPhoneNo,
         type: loadedVendor.type,
+        gender: loadedVendor.gender,
         balance: loadedVendor.balance,
         address: loadedVendor.address,
         message: "Phone Number Updated Successfully ",
@@ -154,6 +157,7 @@ exports.vendor_controller_patch_email = (req, res, next) => {
         phoneNo: loadedVendor.phoneNo,
         verifyPhoneNo: loadedVendor.verifyPhoneNo,
         type: loadedVendor.type,
+        gender: loadedVendor.gender,
         balance: loadedVendor.balance,
         address: loadedVendor.address,
         message: "Email Updated Successfully ",
@@ -357,6 +361,7 @@ exports.vendor_controller_getVendor = (req, res, next) => {
         verifyEmail: loadedVendor.verifyEmail,
         phoneNo: loadedVendor.phoneNo,
         verifyPhoneNo: loadedVendor.verifyPhoneNo,
+        gender: loadedVendor.gender,
         type: loadedVendor.type,
         balance: loadedVendor.balance,
         address: loadedVendor.address,
@@ -402,7 +407,7 @@ exports.vendor_controller_getAll = (req, res, next) => {
               name: data.name,
               phoneNo: data.phoneNo,
               type: data.type,
-              gender:data.gender,
+              gender: data.gender,
             });
           }
         });

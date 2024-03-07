@@ -8,6 +8,7 @@ const employeeSchema = new Schema({
   password: { type: String, required: true },
   address: [],
   share: [],
+  ratings: [],
   gender: { type: String },
   balance: { type: Number, default: 30 },
 });

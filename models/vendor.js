@@ -12,6 +12,7 @@ const vendorSchema = new Schema({
   address: [],
   bookings: [],
   share: [],
+  ratings:[],
   gender: { type: String },
   pincode: { type: String },
   accountCreatedOn: { type: String },
