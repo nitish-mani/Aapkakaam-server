@@ -402,6 +402,7 @@ exports.vendor_controller_getAll = (req, res, next) => {
               name: data.name,
               phoneNo: data.phoneNo,
               type: data.type,
+              gender:data.gender,
             });
           }
         });
