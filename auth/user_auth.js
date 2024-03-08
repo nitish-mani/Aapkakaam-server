@@ -28,6 +28,8 @@ exports.signup = (req, res, next) => {
   const sharedBy = req.body.sharedBy;
   const cd = req.body.cd;
 
+  console.log(gender);
+
   User.findOne({ email: email }).then((resuslt) => {
     if (resuslt?.email)
       return res.status(401).json({ message: "Email already exist !" });
@@ -128,7 +130,7 @@ exports.login = (req, res, next) => {
         verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
         address: loadedUser.address,
-        gender: loadedVendor.gender,
+        gender: loadedUser.gender,
         message: "User logged In Successfully ",
       });
     })
