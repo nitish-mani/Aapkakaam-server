@@ -26,6 +26,7 @@ exports.signup = (req, res, next) => {
   const email = req.body.email;
   const password = req.body.password;
   const type = req.body.type;
+  const gender=req.body.gender;
   const sharedBy = req.body.sharedBy;
   const cd = req.body.cd;
 
@@ -42,6 +43,7 @@ exports.signup = (req, res, next) => {
           email: email,
           password: hashedPw,
           type: type,
+          gender:gender,
           accountCreatedOn: new Date().toDateString(),
         });
         return vendor.save();
