@@ -50,6 +50,11 @@ app.use((error, req, res, next) => {
 app.use("/category", (req, res) => {
   res.sendFile(path.join(pathLoc, "dist", "index.html"));
 });
+
+app.use("/", (req, res) => {
+  res.sendFile(path.join(pathLoc, "dist", "index.html"));
+});
+
 async function main() {
   await mongoose.connect(MONGODB_URI);
 }
