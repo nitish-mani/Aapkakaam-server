@@ -9,7 +9,8 @@ const path = require("path");
 require("dotenv").config();
 
 const MONGODB_URI = process.env.MONGODB_URL_1;
-const pathLoc = process.env.FT_PATH || "../Aapkakaam";
+const pathLoc = `${process.env.FT_PATH}` || "../Aapkakaam";
+const PORT = process.env.PORT;
 
 const app = express();
 
@@ -52,7 +53,7 @@ app.use("/category", (req, res) => {
 async function main() {
   await mongoose.connect(MONGODB_URI);
 }
-//
+
 main()
   .then((result) =>
     app.listen(3000, () => {
