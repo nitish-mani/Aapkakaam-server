@@ -9,24 +9,15 @@ const path = require("path");
 require("dotenv").config();
 
 const MONGODB_URI = process.env.MONGODB_URL_1;
+const pathLoc = process.env.FT_PATH || "../Aapkakaam";
 
 const app = express();
 
 app.use(express.json());
-app.use(
-  express.static(
-    path.join("/home/ubuntu/frontend/_work/Aapkakaam/Aapkakaam", "dist")
-  )
-);
+app.use(express.static(path.join(pathLoc, "dist")));
 
 app.get("/", function (req, res) {
-  res.sendFile(
-    path.join(
-      "/home/ubuntu/frontend/_work/Aapkakaam/Aapkakaam",
-      "dist",
-      "index.html"
-    )
-  );
+  res.sendFile(path.join(pathLoc, "dist", "index.html"));
 });
 
 app.use((req, res, next) => {
@@ -56,13 +47,7 @@ app.use((error, req, res, next) => {
 });
 
 app.use("/category", (req, res) => {
-  res.sendFile(
-    path.join(
-      "/home/ubuntu/frontend/_work/Aapkakaam/Aapkakaam",
-      "dist",
-      "index.html"
-    )
-  );
+  res.sendFile(path.join(pathLoc, "dist", "index.html"));
 });
 async function main() {
   await mongoose.connect(MONGODB_URI);
