@@ -53,7 +53,6 @@ app.use("/category", (req, res) => {
 async function main() {
   await mongoose.connect(MONGODB_URI);
 }
-console.log(MONGODB_URI, pathLoc, PORT);
 
 main()
   .then((result) =>
