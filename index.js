@@ -13,10 +13,10 @@ const MONGODB_URI = process.env.MONGODB_URL_1;
 const app = express();
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "dist")));
+app.use(express.static(path.join("/home/ubuntu/frontend/_work/Aapkakaam/Aapkakaam", "dist")));
 
 app.get("/", function (req, res) {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
+  res.sendFile(path.join("/home/ubuntu/frontend/_work/Aapkakaam/Aapkakaam", "dist", "index.html"));
 });
 
 app.use((req, res, next) => {
@@ -46,9 +46,8 @@ app.use((error, req, res, next) => {
 });
 
 app.use("/category", (req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
+  res.sendFile(path.join("/home/ubuntu/frontend/_work/Aapkakaam/Aapkakaam", "dist", "index.html"));
 });
-
 async function main() {
   await mongoose.connect(MONGODB_URI);
 }
