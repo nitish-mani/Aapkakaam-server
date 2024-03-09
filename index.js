@@ -53,10 +53,11 @@ app.use("/category", (req, res) => {
 async function main() {
   await mongoose.connect(MONGODB_URI);
 }
+console.log(MONGODB_URI, pathLoc, PORT);
 
 main()
   .then((result) =>
-    app.listen(3000, () => {
+    app.listen(PORT, () => {
       console.log("server is up");
     })
   )
