@@ -47,9 +47,9 @@ app.use((error, req, res, next) => {
   res.status(status).json({ message: message, data: data });
 });
 
-app.use("/category", (req, res) => {
-  res.sendFile(path.join(pathLoc, "dist", "index.html"));
-});
+// app.use("/category", (req, res) => {
+//   res.sendFile(path.join(pathLoc, "dist", "index.html"));
+// });
 
 app.use("/", (req, res) => {
   res.sendFile(path.join(pathLoc, "dist", "index.html"));
