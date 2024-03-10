@@ -1,6 +1,7 @@
 // const { Result } = require("express-validator");
 const Vendor = require("../models/vendor");
 const Bookings = require("../models/bookings");
+const nodemailer = require("nodemailer");
 
 const otp = () => Math.floor(Math.random() * (99999 - 10000 + 1)) + 10000;
 
