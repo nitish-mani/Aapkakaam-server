@@ -2,6 +2,7 @@
 const Vendor = require("../models/vendor");
 const Bookings = require("../models/bookings");
 const nodemailer = require("nodemailer");
+const { default: axios } = require("axios");
 
 const otp = () => Math.floor(Math.random() * (99999 - 10000 + 1)) + 10000;
 
@@ -48,9 +49,9 @@ exports.vendor_controller_otpE = (req, res, next) => {
   const userOtp = req.body.emailOtp;
   const otpd = otpE;
   if (otpd == userOtp) {
-    res.json({ message: "otp verified",verify:true });
+    res.json({ message: "otp verified", verify: true });
   } else {
-    res.json({ message: "invalid otp",verify:false });
+    res.json({ message: "invalid otp", verify: false });
   }
 };
 
@@ -77,9 +78,9 @@ exports.vendor_controller_otp = (req, res, next) => {
   const userOtp = req.body.otp;
   const otpd = otpM;
   if (otpd == userOtp) {
-    res.json({ message: "otp verified" ,verify:true});
+    res.json({ message: "otp verified", verify: true });
   } else {
-    res.json({ message: "invalid otp",verify:false });
+    res.json({ message: "invalid otp", verify: false });
   }
 };
 
