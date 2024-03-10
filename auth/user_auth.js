@@ -27,8 +27,8 @@ exports.signup = (req, res, next) => {
   const gender = req.body.gender;
   const sharedBy = req.body.sharedBy;
   const cd = req.body.cd;
-
-  console.log(gender);
+  const verifyPhoneNo = req.body.verifyPhoneNo;
+  const verifyEmail = req.body.verifyEmail;
 
   User.findOne({ email: email }).then((resuslt) => {
     if (resuslt?.email)
@@ -42,6 +42,8 @@ exports.signup = (req, res, next) => {
           email: email,
           password: hashedPw,
           gender: gender,
+          verifyPhoneNo,
+          verifyEmail,
           accountCreatedOn: new Date().toDateString(),
         });
         return user.save();

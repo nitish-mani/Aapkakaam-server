@@ -26,9 +26,11 @@ exports.signup = (req, res, next) => {
   const email = req.body.email;
   const password = req.body.password;
   const type = req.body.type;
-  const gender=req.body.gender;
+  const gender = req.body.gender;
   const sharedBy = req.body.sharedBy;
   const cd = req.body.cd;
+  const verifyPhoneNo = req.body.verifyPhoneNo;
+  const verifyEmail = req.body.verifyEmail;
 
   Vendor.findOne({ email: email }).then((resuslt) => {
     if (resuslt?.email)
@@ -43,7 +45,9 @@ exports.signup = (req, res, next) => {
           email: email,
           password: hashedPw,
           type: type,
-          gender:gender,
+          gender: gender,
+          verifyPhoneNo,
+          verifyEmail,
           accountCreatedOn: new Date().toDateString(),
         });
         return vendor.save();

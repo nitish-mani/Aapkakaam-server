@@ -11,6 +11,15 @@ const user_auth = require("../auth/user_auth");
 //// for user //////
 ////////////////////
 
+router.post("/emailVerification", user_controller.user_controller_verify_email);
+router.post("/emailOtpVerification", user_controller.user_controller_otpE);
+
+router.post(
+  "/phoneVerification",
+  user_controller.user_controller_verify_phoneNo
+);
+router.post("/otpVerification", user_controller.user_controller_otp);
+
 router.post("/signup", user_auth.signup);
 router.post("/login", user_auth.login);
 

@@ -2,6 +2,86 @@
 const Vendor = require("../models/vendor");
 const Bookings = require("../models/bookings");
 
+const otp = () => Math.floor(Math.random() * (99999 - 10000 + 1)) + 10000;
+
+////////////////////////////////////
+///// for Email Verification //////
+//////////////////////////////////
+let otpE;
+exports.vendor_controller_verify_email = (req, res, next) => {
+  otpE = otp();
+  const email = req.body.email;
+
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    auth: {
+      user: "nitishmani63@gmail.com",
+      pass: "ivczvwwtjmeqlddu",
+    },
+  });
+
+  // Function to send OTP via email
+  function sendOTP(email, otp) {
+    const mailOptions = {
+      from: "aapkakaam19@yahoo.com",
+      to: email,
+      subject: "OTP Verification",
+      text: `Your OTP for email verification is: ${otp}`,
+    };
+
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        res.json(error);
+      } else {
+        console.log("Email sent: " + info.response);
+        res.json({ message: "OTP sent on Email" });
+      }
+    });
+  }
+
+  sendOTP(email, otpE);
+};
+
+exports.vendor_controller_otpE = (req, res, next) => {
+  const userOtp = req.body.emailOtp;
+  const otpd = otpE;
+  if (otpd == userOtp) {
+    res.json({ message: "otp verified",verify:true });
+  } else {
+    res.json({ message: "invalid otp",verify:false });
+  }
+};
+
+////////////////////////////////////////////
+///// for Mobile Number Verification //////
+//////////////////////////////////////////
+
+let otpM;
+exports.vendor_controller_verify_phoneNo = (req, res, next) => {
+  otpM = otp();
+  const phoneNo = req.body.phoneNo;
+  let otpd = otpM;
+  let result = "";
+  axios
+    .get(
+      `${process.env.FAST2SMS}&route=otp&variables_values=${otpd}&flash=0&numbers=${phoneNo}`
+    )
+    .then((res) => (result = res))
+    .catch((err) => (result = err));
+  res.json(result);
+};
+
+exports.vendor_controller_otp = (req, res, next) => {
+  const userOtp = req.body.otp;
+  const otpd = otpM;
+  if (otpd == userOtp) {
+    res.json({ message: "otp verified" ,verify:true});
+  } else {
+    res.json({ message: "invalid otp",verify:false });
+  }
+};
+
 ///////////////////////////////////////
 //// for updating vendor address //////
 ///////////////////////////////////////

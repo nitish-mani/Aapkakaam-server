@@ -11,6 +11,18 @@ const vendor_auth = require("../auth/vendor_auth");
 //// for vendor ////
 ////////////////////
 
+router.post(
+  "/emailVerification",
+  vendor_controller.vendor_controller_verify_email
+);
+router.post("/emailOtpVerification", vendor_controller.vendor_controller_otpE);
+
+router.post(
+  "/phoneVerification",
+  vendor_controller.vendor_controller_verify_phoneNo
+);
+router.post("/otpVerification", vendor_controller.vendor_controller_otp);
+
 router.post("/signup", vendor_auth.signup);
 router.post("/login", vendor_auth.login);
 
