@@ -22,7 +22,7 @@ app.get("/", function (req, res) {
 });
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "aapkakaam.com");
+  res.setHeader("Access-Control-Allow-Origin", "aapkakaam.com,aapkakaam.in");
   res.setHeader(
     "Access-Control-Allow-Methods",
     "OPTIONS, GET, POST, PUT, PATCH, DELETE"
