@@ -27,6 +27,11 @@ router.post("/signup", vendor_auth.signup);
 router.post("/login", vendor_auth.login);
 
 router.patch(
+  "/edit/password",
+  vendor_controller.vendor_controller_patch_password
+);
+
+router.patch(
   "/update/address",
   is_vendor,
   vendor_controller.vendor_controller_patch_address

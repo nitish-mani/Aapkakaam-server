@@ -23,6 +23,8 @@ router.post("/otpVerification", user_controller.user_controller_otp);
 router.post("/signup", user_auth.signup);
 router.post("/login", user_auth.login);
 
+router.patch("/edit/password", user_controller.user_controller_patch_password);
+
 router.patch("/edit/name", is_user, user_controller.user_controller_patch_name);
 router.patch(
   "/edit/email",

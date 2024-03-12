@@ -22,7 +22,7 @@ app.get("/", function (req, res) {
 });
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", "aapkakaam.com");
   res.setHeader(
     "Access-Control-Allow-Methods",
     "OPTIONS, GET, POST, PUT, PATCH, DELETE"
@@ -50,8 +50,6 @@ app.use((error, req, res, next) => {
 app.use("/category", (req, res) => {
   res.sendFile(path.join(pathLoc, "dist", "index.html"));
 });
-
-
 
 async function main() {
   await mongoose.connect(MONGODB_URI);

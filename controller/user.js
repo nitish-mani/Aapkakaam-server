@@ -1,8 +1,11 @@
 const { default: axios } = require("axios");
 const User = require("../models/user");
 const nodemailer = require("nodemailer");
+const bcrypt = require("bcryptjs");
 
-const otp = () => Math.floor(Math.random() * (99999 - 10000 + 1)) + 10000;
+let verifiedNumber = false;
+let verifiedEmail = false;
+const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
 
 ////////////////////////////////////
 ///// for Email Verification //////
@@ -34,7 +37,7 @@ exports.user_controller_verify_email = (req, res, next) => {
       if (error) {
         res.json(error);
       } else {
-        res.json({ message: "OTP sent on Email" });
+        res.json({ message: "OTP sent on Email", verified: true });
       }
     });
   }
@@ -45,6 +48,7 @@ exports.user_controller_otpE = (req, res, next) => {
   const userOtp = req.body.emailOtp;
   const otpd = otpE;
   if (otpd == userOtp) {
+    verifiedEmail = true;
     res.json({ message: "otp verified", verify: true });
   } else {
     res.json({ message: "invalid otp", verify: false });
@@ -59,23 +63,54 @@ exports.user_controller_verify_phoneNo = (req, res, next) => {
   otpM = otp();
   const phoneNo = req.body.phoneNo;
   const otpd = otpM;
-  let result = "";
+
   axios
     .get(
       `${process.env.FAST2SMS}&route=otp&variables_values=${otpd}&flash=0&numbers=${phoneNo}`
     )
-    .then((res) => (result = res))
-    .catch((err) => (result = err));
-  res.json(result);
+    .then((succ) => res.send(succ.data))
+    .catch((err) => res.send(err.response.data));
 };
 
 exports.user_controller_otp = (req, res, next) => {
   const userOtp = req.body.otp;
   const otpd = otpM;
   if (otpd == userOtp) {
+    verifiedNumber = true;
     res.json({ message: "otp verified", verify: true });
   } else {
     res.json({ message: "invalid otp", verify: false });
+  }
+};
+
+///////////////////////////////////////
+//// for updating vendor password //////
+///////////////////////////////////////
+
+exports.user_controller_patch_password = (req, res, next) => {
+  const password = req.body.password;
+  const email = req.body.email;
+
+  if (verifiedEmail)
+    bcrypt
+      .hash(password, 12)
+      .then((hashPass) => {
+        User.findOneAndUpdate(
+          { email: email },
+          { password: hashPass },
+          { returnDocument: "after" }
+        )
+          .then((result) => {
+            (verifiedEmail = false),
+              res
+                .status(201)
+                .json({ message: "password changed successfully" });
+          })
+          .catch((err) => console.log(err));
+      })
+      .catch((err) => console.log(err));
+  else {
+    res.status(404).json({ message: "Not verified user" });
   }
 };
 
@@ -177,34 +212,39 @@ exports.user_controller_patch_phoneNo = (req, res, next) => {
   const userId = req.body.userId;
   const token = req.body.token;
   let loadedUser;
-  User.findByIdAndUpdate(userId, { phoneNo }, { returnDocument: "after" })
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find User.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedUser = result;
-      res.status(200).json({
-        token: token,
-        userId: loadedUser._id,
-        name: loadedUser.name,
-        email: loadedUser.email,
-        verifyEmail: loadedUser.verifyEmail,
-        phoneNo: loadedUser.phoneNo,
-        verifyPhoneNo: loadedUser.verifyPhoneNo,
-        balance: loadedUser.balance,
-        address: loadedUser.address,
-        gender: loadedUser.gender,
-        message: "Phone Number Updated Successfully ",
+  if (verifiedNumber)
+    User.findByIdAndUpdate(userId, { phoneNo }, { returnDocument: "after" })
+      .then((result) => {
+        if (!result) {
+          const error = new Error("Could not find User.");
+          error.statusCode = 404;
+          throw error;
+        }
+        loadedUser = result;
+        verifiedNumber = false;
+        res.status(200).json({
+          token: token,
+          userId: loadedUser._id,
+          name: loadedUser.name,
+          email: loadedUser.email,
+          verifyEmail: loadedUser.verifyEmail,
+          phoneNo: loadedUser.phoneNo,
+          verifyPhoneNo: loadedUser.verifyPhoneNo,
+          balance: loadedUser.balance,
+          address: loadedUser.address,
+          gender: loadedUser.gender,
+          message: "Phone Number Updated Successfully ",
+        });
+      })
+      .catch((err) => {
+        if (!err.statusCode) {
+          err.statusCode = 500;
+        }
+        next(err);
       });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+  else {
+    res.status(404).json({ message: "Not Verified User" });
+  }
 };
 ///////////////////////////////////////
 ///// for modifing user email //////
@@ -215,34 +255,39 @@ exports.user_controller_patch_email = (req, res, next) => {
   const userId = req.body.userId;
   const token = req.body.token;
   let loadedUser;
-  User.findByIdAndUpdate(userId, { email }, { returnDocument: "after" })
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find User.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedUser = result;
-      res.status(200).json({
-        token: token,
-        userId: loadedUser._id,
-        name: loadedUser.name,
-        email: loadedUser.email,
-        verifyEmail: loadedUser.verifyEmail,
-        phoneNo: loadedUser.phoneNo,
-        verifyPhoneNo: loadedUser.verifyPhoneNo,
-        balance: loadedUser.balance,
-        address: loadedUser.address,
-        gender: loadedUser.gender,
-        message: "Email Updated Successfully ",
+  if (verifiedEmail)
+    User.findByIdAndUpdate(userId, { email }, { returnDocument: "after" })
+      .then((result) => {
+        if (!result) {
+          const error = new Error("Could not find User.");
+          error.statusCode = 404;
+          throw error;
+        }
+        loadedUser = result;
+        verifiedEmail = false;
+        res.status(200).json({
+          token: token,
+          userId: loadedUser._id,
+          name: loadedUser.name,
+          email: loadedUser.email,
+          verifyEmail: loadedUser.verifyEmail,
+          phoneNo: loadedUser.phoneNo,
+          verifyPhoneNo: loadedUser.verifyPhoneNo,
+          balance: loadedUser.balance,
+          address: loadedUser.address,
+          gender: loadedUser.gender,
+          message: "Email Updated Successfully ",
+        });
+      })
+      .catch((err) => {
+        if (!err.statusCode) {
+          err.statusCode = 500;
+        }
+        next(err);
       });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+  else {
+    res.status(404).json({ message: "Not Verified User" });
+  }
 };
 
 ///////////////////////////////////////
