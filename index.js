@@ -20,9 +20,9 @@ app.use(express.static(path.join(pathLoc, "dist")));
 app.get("/", function (req, res) {
   res.sendFile(path.join(pathLoc, "dist", "index.html"));
 });
-
+const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "aapkakaam.com,aapkakaam.in");
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader(
     "Access-Control-Allow-Methods",
     "OPTIONS, GET, POST, PUT, PATCH, DELETE"
