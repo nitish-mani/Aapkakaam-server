@@ -9,7 +9,7 @@ const path = require("path");
 require("dotenv").config();
 
 const MONGODB_URI = process.env.MONGODB_URL_1;
-const pathLoc = `${process.env.FT_PATH}` || "../Aapkakaam";
+const pathLoc = `${process.env.FT_PATH}`;
 const PORT = process.env.PORT;
 
 const app = express();
@@ -20,7 +20,8 @@ app.use(express.static(path.join(pathLoc, "dist")));
 app.get("/", function (req, res) {
   res.sendFile(path.join(pathLoc, "dist", "index.html"));
 });
-const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
+
+const allowedOrigin = "*" || ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader(
@@ -40,7 +41,6 @@ app.use("/share", shareRoute);
 app.use("/bookings", bookingsRoute);
 
 app.use((error, req, res, next) => {
-  console.log(error);
   const status = error.statusCode || 500;
   const message = error.message;
   const data = error.data;

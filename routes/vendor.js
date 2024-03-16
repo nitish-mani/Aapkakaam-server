@@ -54,9 +54,15 @@ router.patch(
 );
 
 router.patch(
+  "/wageRate",
+  is_vendor,
+  vendor_controller.vendor_controller_patch_wageRate
+);
+
+router.patch(
   "/bookNowV/:vendorId",
   is_vendor,
-  vendor_controller.vendor_controller_bookNow
+  vendor_controller.vendor_controller_bookNowV
 );
 
 router.get(

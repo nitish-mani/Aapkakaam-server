@@ -4,8 +4,10 @@ const { Schema } = mongoose;
 const userSchema = new Schema({
   name: { type: String, required: true },
   phoneNo: { type: Number, required: true },
+  otpForPhoneNo: Number,
   verifyPhoneNo: { type: Boolean, default: false },
   email: { type: String, required: true },
+  otpForEmail: Number,
   verifyEmail: { type: Boolean, default: false },
   password: { type: String, required: true },
   address: [],
@@ -17,3 +19,5 @@ const userSchema = new Schema({
 });
 
 module.exports = mongoose.model("User", userSchema);
+
+userSchema.index({ phoneNo: 1, email: 1 });

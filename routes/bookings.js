@@ -7,10 +7,65 @@ const is_employee = require("../middleware/is_employee");
 
 const bookings_controller = require("../controller/bookings");
 
-router.post("/postToBookingsU",is_user, bookings_controller.bookings_controller_post);
-router.post("/postToBookingsV",is_vendor, bookings_controller.bookings_controller_post);
+router.post(
+  "/postToBookingsU",
+  is_user,
+  bookings_controller.bookings_controller_post
+);
+router.post(
+  "/postToBookingsV",
+  is_vendor,
+  bookings_controller.bookings_controller_post
+);
 
-router.get("/getOrdersU/:userId",is_user, bookings_controller.bookings_controller_get);
-router.get("/getOrdersV/:userId",is_vendor, bookings_controller.bookings_controller_get);
+router.get(
+  "/getOrdersU/:userId",
+  is_user,
+  bookings_controller.bookings_controller_get
+);
+router.get(
+  "/getOrdersV/:userId",
+  is_vendor,
+  bookings_controller.bookings_controller_get
+);
+
+router.patch(
+  "/cancelOrderU",
+  is_user,
+  bookings_controller.bookings_controller_cancelU
+);
+router.patch(
+  "/cancelOrderV",
+  is_vendor,
+  bookings_controller.bookings_controller_cancelV
+);
+
+router.patch(
+  "/orderCompletedU",
+  is_user,
+  bookings_controller.bookings_controller_completeU
+);
+router.patch(
+  "/orderCompletedV",
+  is_vendor,
+  bookings_controller.bookings_controller_completeV
+);
+
+router.patch(
+  "/ratingU",
+  is_user,
+  bookings_controller.bookings_controller_ratingU
+);
+router.patch(
+  "/ratingV",
+  is_vendor,
+  bookings_controller.bookings_controller_ratingV
+);
+
+router.patch(
+  "/ratingPermission",
+  is_vendor,
+  bookings_controller.bookings_controller_ratingPermission
+);
 
 module.exports = router;
