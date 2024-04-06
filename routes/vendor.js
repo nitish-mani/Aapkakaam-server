@@ -5,6 +5,8 @@ const is_user = require("../middleware/is_user");
 const is_vendor = require("../middleware/is_vendor");
 const vendor_controller = require("../controller/vendor");
 
+const uploads = require("../controller/uploads");
+
 const vendor_auth = require("../auth/vendor_auth");
 
 /////////////////////
@@ -25,6 +27,9 @@ router.post("/otpVerification", vendor_controller.vendor_controller_otp);
 
 router.post("/signup", vendor_auth.signup);
 router.post("/login", vendor_auth.login);
+
+router.put("/uploads/:category/:id", is_vendor, uploads.uploads);
+router.get("/getUploads/:category/:id", is_vendor, uploads.getUploads);
 
 router.patch(
   "/edit/password",
@@ -66,7 +71,7 @@ router.patch(
 );
 
 router.get(
-  "/getBookings/:vendorId",
+  "/getBookings/:vendorId/:month/:year",
   is_vendor,
   vendor_controller.vendor_controller_getBookings
 );
@@ -77,7 +82,7 @@ router.get(
   vendor_controller.vendor_controller_getOrders
 );
 router.get(
-  "/getShare/:vendorId",
+  "/getShare/:vendorId/:skip",
   is_vendor,
   vendor_controller.vendor_controller_getShare
 );
@@ -99,12 +104,12 @@ router.patch(
 );
 
 router.get(
-  "/getAll/:type/:pincode/:bookingDate",
+  "/getAll/:type/:pincode/:bookingDate/:page/:minRating/:minWageRate",
   is_user,
   vendor_controller.vendor_controller_getAll
 );
 router.get(
-  "/getAllV/:type/:pincode/:bookingDate",
+  "/getAllV/:type/:pincode/:bookingDate/:page/:minRating/:minWageRate",
   is_vendor,
   vendor_controller.vendor_controller_getAll
 );

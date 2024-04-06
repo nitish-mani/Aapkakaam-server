@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 
 const Vendor = require("../models/vendor");
 const User = require("../models/user");
+const OtpAuth = require("../models/otpAuth");
 
 const secretKey =
   "thisismyfirstcompanywhereweservepeopletommaketheirlifeeasy/vendor";
@@ -12,88 +13,93 @@ const secretKey =
 //// for vendor signup //////
 /////////////////////////////
 
-exports.signup = (req, res, next) => {
-  const errors = validationResult(req);
+exports.signup = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const error = new Error("Validation failed.");
+      error.statusCode = 422;
+      error.data = errors.array();
+      throw error;
+    }
 
-  if (!errors.isEmpty()) {
-    const error = new Error("Validation failed.");
-    error.statusCode = 422;
-    error.data = errors.array();
-    throw error;
-  }
-  const name = req.body.name;
-  const phoneNo = req.body.phoneNo;
-  const email = req.body.email;
-  const password = req.body.password;
-  const type = req.body.type;
-  const gender = req.body.gender;
-  const sharedBy = req.body.sharedBy;
-  const cd = req.body.cd;
-  const verifyPhoneNo = req.body.verifyPhoneNo;
-  const verifyEmail = req.body.verifyEmail;
+    const {
+      name,
+      phoneNo,
+      email,
+      password,
+      type,
+      gender,
+      sharedBy,
+      cd,
+      validPhoneNoId,
+      validEmailId,
+    } = req.body;
 
-  Vendor.findOne({ email: email }).then((resuslt) => {
-    if (resuslt?.email)
-      return res.status(401).json({ message: "Email already exist !" });
+    const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const regexPass =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
 
-    bcrypt
-      .hash(password, 12)
-      .then((hashedPw) => {
-        const vendor = new Vendor({
-          name: name,
-          phoneNo: phoneNo,
-          email: email,
-          password: hashedPw,
-          type: type,
-          gender: gender,
-          verifyPhoneNo,
-          verifyEmail,
-          accountCreatedOn: new Date().toDateString(),
-        });
-        return vendor.save();
-      })
-      .then((result) => {
-        if (sharedBy && cd === "user")
-          User.findOne({ _id: sharedBy }).then((result) => {
-            let balance = result.balance + 5;
-
-            User.findByIdAndUpdate(
-              sharedBy,
-              {
-                $push: {
-                  share: { name, phoneNo, date: new Date().toDateString() },
-                },
-                balance,
-              },
-              { returnDocument: "after" }
-            ).then((suc) => console.log(suc));
-          });
-        else if (sharedBy && cd === "vendor")
-          Vendor.findOne({ _id: sharedBy }).then((result) => {
-            let balance = result.balance + 5;
-
-            Vendor.findByIdAndUpdate(
-              sharedBy,
-              {
-                $push: {
-                  share: { name, phoneNo, date: new Date().toDateString() },
-                },
-                balance,
-              },
-              { returnDocument: "after" }
-            ).then((suc) => console.log(suc));
-          });
-        res
-          .status(201)
-          .json({ message: "Vendor created!", vendorId: result._id });
-      })
-      .catch((err) => {
-        if (!err.statusCode) {
-          err.statusCode = 500;
-        }
-        next(err);
+    if (!regexEmail.test(email)) {
+      return res.status(401).json({ message: "Invalid Email" });
+    }
+    if (!regexPass.test(password)) {
+      return res.status(401).json({
+        message:
+          "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character",
       });
-  });
+    }
+
+    const [checkPhoneNoValid, checkEmailValid] = await Promise.all([
+      OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
+      OtpAuth.findById(validEmailId).select("verifiedEmail"),
+    ]);
+    const verifiedEmail = checkEmailValid?.verifiedEmail;
+    const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
+
+    if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
+      return res.status(401).json({ message: "Number not verified" });
+    }
+
+    if (!checkEmailValid || !checkEmailValid.verifiedEmail) {
+      return res.status(401).json({ message: "Email not verified" });
+    }
+
+    const hashedPw = await bcrypt.hash(password, 12);
+    const vendor = new Vendor({
+      name: name,
+      phoneNo: phoneNo,
+      email: email,
+      password: hashedPw,
+      type: type,
+      gender: gender,
+      verifyPhoneNo: verifiedNumber,
+      verifyEmail: verifiedEmail,
+      accountCreatedOn: new Date().toDateString(),
+    });
+    const result = await vendor.save();
+
+    if (sharedBy && (cd === "user" || cd === "vendor")) {
+      const Model = cd === "user" ? User : Vendor;
+      const sharedUser = await Model.findById(sharedBy);
+      if (sharedUser) {
+        let balance = sharedUser.balance + 5;
+        await Model.findByIdAndUpdate(sharedBy, {
+          $push: {
+            share: { name, phoneNo, date: new Date().toDateString() },
+          },
+          balance,
+        });
+      }
+    }
+
+    res.status(201).json({ message: "Vendor created!", vendorId: result._id });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 //////////////////////////////
@@ -140,10 +146,11 @@ exports.login = (req, res, next) => {
         type: loadedVendor.type,
         gender: loadedVendor.gender,
         rating: loadedVendor.rating,
-        ratingCount:loadedVendor.ratingCount,
+        ratingCount: loadedVendor.ratingCount,
         wageRate: loadedVendor.wageRate,
         address: loadedVendor.address,
         balance: loadedVendor.balance,
+        imgURL: loadedVendor.imgURL,
         message: "Vendor logged In Successfully ",
       });
     })

@@ -4,9 +4,11 @@ const Vendor = require("../models/vendor");
 const Bookings = require("../models/bookings");
 const OtpAuth = require("../models/otpAuth");
 const bcrypt = require("bcryptjs");
+const { ObjectId } = require("mongodb");
 
 const nodemailer = require("nodemailer");
 const { default: axios } = require("axios");
+const { TransitionStorageClass } = require("@aws-sdk/client-s3");
 
 const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
 
@@ -31,14 +33,14 @@ exports.vendor_controller_verify_email = (req, res, next) => {
           host: "smtp.gmail.com",
           port: 587,
           auth: {
-            user: "nitishmani63@gmail.com",
-            pass: "ivczvwwtjmeqlddu",
+            user: "otp-verification@aapkakaam.com",
+            pass: "jwonqzmtwkmlideu",
           },
         });
 
         function sendOTP(email, otp) {
           const mailOptions = {
-            from: "aapkakaam19@yahoo.com",
+            from: "otp-verification@aapkakaam.com",
             to: email,
             subject: "OTP Verification",
             text: `Your OTP for email verification is: ${otp}`,
@@ -110,7 +112,8 @@ exports.vendor_controller_verify_phoneNo = (req, res, next) => {
               verified: true,
               otpId: result._id,
             })
-          );
+          )
+          .catch((err) => res.send(err.response.data));
       });
     })
     .catch((err) => res.send(err.response.data));
@@ -139,39 +142,37 @@ exports.vendor_controller_otp = (req, res, next) => {
 //// for updating vendor password //////
 ///////////////////////////////////////
 
-exports.vendor_controller_patch_password = (req, res, next) => {
-  const password = req.body.password;
-  const email = req.body.email;
-  const otpId = req.body.otpId;
+exports.vendor_controller_patch_password = async (req, res, next) => {
+  try {
+    const { password, email, otpId } = req.body;
 
-  OtpAuth.findById(otpId)
-    .then((result) => {
-      if (result?.verifiedEmail)
-        bcrypt.hash(password, 12).then((hashPass) => {
-          Vendor.findOneAndUpdate(
-            { email: email },
-            { password: hashPass },
-            { returnDocument: "after" }
-          )
-            .then((result) => {
-              (verifiedEmail = false),
-                res
-                  .status(201)
-                  .json({ message: "password changed successfully" });
-            })
-            .catch((err) =>
-              res
-                .status(404)
-                .json({ message: "Vendor with this Email Not found" })
-            );
-        });
-      else {
-        res.status(404).json({ message: "Not verified vendor" });
-      }
-    })
-    .catch((err) => {
-      res.status(404).json({ message: "Not Authorized" });
-    });
+    const otpDoc = await OtpAuth.findById(otpId);
+
+    if (!otpDoc || !otpDoc.verifiedEmail) {
+      return res
+        .status(404)
+        .json({ message: "Not authorized or not verified vendor." });
+    }
+
+    const hashPass = await bcrypt.hash(password, 12);
+
+    const updatedVendor = await Vendor.findOneAndUpdate(
+      { email: email },
+      { password: hashPass },
+      { returnDocument: "after" }
+    );
+
+    if (!updatedVendor) {
+      return res
+        .status(404)
+        .json({ message: "Vendor with this Email Not found" });
+    }
+
+    res.status(201).json({ message: "Password changed successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
 };
 
 ///////////////////////////////////////
@@ -180,7 +181,6 @@ exports.vendor_controller_patch_password = (req, res, next) => {
 
 exports.vendor_controller_patch_address = (req, res, next) => {
   const vendorId = req.body.vendorId;
-  const token = req.body.token;
 
   const vill = req.body.vill;
   const post = req.body.post;
@@ -203,19 +203,6 @@ exports.vendor_controller_patch_address = (req, res, next) => {
       }
       loadedVendor = result;
       res.status(200).json({
-        token: token,
-        vendorId: loadedVendor._id,
-        name: loadedVendor.name,
-        email: loadedVendor.email,
-        verifyEmail: loadedVendor.verifyEmail,
-        phoneNo: loadedVendor.phoneNo,
-        verifyPhoneNo: loadedVendor.verifyPhoneNo,
-        type: loadedVendor.type,
-        gender: loadedVendor.gender,
-        rating: loadedVendor.rating,
-        ratingCount: loadedVendor.ratingCount,
-        wageRate: loadedVendor.wageRate,
-        balance: loadedVendor.balance,
         address: loadedVendor.address,
         message: "Address Updated Successfully ",
       });
@@ -235,7 +222,6 @@ exports.vendor_controller_patch_address = (req, res, next) => {
 exports.vendor_controller_patch_name = (req, res, next) => {
   const name = req.body.name;
   const vendorId = req.body.vendorId;
-  const token = req.body.token;
   let loadedVendor;
   Vendor.findByIdAndUpdate(vendorId, { name }, { returnDocument: "after" })
     .then((result) => {
@@ -246,20 +232,7 @@ exports.vendor_controller_patch_name = (req, res, next) => {
       }
       loadedVendor = result;
       res.status(200).json({
-        token: token,
-        vendorId: loadedVendor._id,
         name: loadedVendor.name,
-        email: loadedVendor.email,
-        verifyEmail: loadedVendor.verifyEmail,
-        phoneNo: loadedVendor.phoneNo,
-        verifyPhoneNo: loadedVendor.verifyPhoneNo,
-        type: loadedVendor.type,
-        gender: loadedVendor.gender,
-        rating: loadedVendor.rating,
-        ratingCount: loadedVendor.ratingCount,
-        wageRate: loadedVendor.wageRate,
-        balance: loadedVendor.balance,
-        address: loadedVendor.address,
         message: "Name Updated Successfully ",
       });
     })
@@ -270,6 +243,7 @@ exports.vendor_controller_patch_name = (req, res, next) => {
       next(err);
     });
 };
+
 ///////////////////////////////////////
 ///// for modifing vendor phoneNo //////
 //////////////////////////////////////
@@ -277,7 +251,6 @@ exports.vendor_controller_patch_name = (req, res, next) => {
 exports.vendor_controller_patch_phoneNo = (req, res, next) => {
   const phoneNo = req.body.phoneNo;
   const vendorId = req.body.vendorId;
-  const token = req.body.token;
   const otpId = req.body.otpId;
   let loadedVendor;
   OtpAuth.findById(otpId)
@@ -297,20 +270,7 @@ exports.vendor_controller_patch_phoneNo = (req, res, next) => {
             loadedVendor = result;
             verifiedNumber = false;
             res.status(200).json({
-              token: token,
-              vendorId: loadedVendor._id,
-              name: loadedVendor.name,
-              email: loadedVendor.email,
-              verifyEmail: loadedVendor.verifyEmail,
               phoneNo: loadedVendor.phoneNo,
-              verifyPhoneNo: loadedVendor.verifyPhoneNo,
-              type: loadedVendor.type,
-              gender: loadedVendor.gender,
-              rating: loadedVendor.rating,
-              ratingCount: loadedVendor.ratingCount,
-              wageRate: loadedVendor.wageRate,
-              balance: loadedVendor.balance,
-              address: loadedVendor.address,
               message: "Phone Number Updated Successfully ",
             });
           })
@@ -328,6 +288,7 @@ exports.vendor_controller_patch_phoneNo = (req, res, next) => {
       res.status(404).json({ message: "Not Authorized" });
     });
 };
+
 ///////////////////////////////////////
 ///// for modifing vendor email //////
 //////////////////////////////////////
@@ -335,49 +296,40 @@ exports.vendor_controller_patch_phoneNo = (req, res, next) => {
 exports.vendor_controller_patch_email = (req, res, next) => {
   const email = req.body.email;
   const vendorId = req.body.vendorId;
-  const token = req.body.token;
   const otpId = req.body.otpId;
   let loadedVendor;
   OtpAuth.findById(otpId)
     .then((result) => {
       if (result?.verifiedEmail)
-        Vendor.findByIdAndUpdate(
-          vendorId,
-          { email },
-          { returnDocument: "after" }
-        )
-          .then((result) => {
-            if (!result) {
-              const error = new Error("Could not find Vendor.");
-              error.statusCode = 404;
-              throw error;
-            }
-            loadedVendor = result;
-            verifiedEmail = false;
-            res.status(200).json({
-              token: token,
-              vendorId: loadedVendor._id,
-              name: loadedVendor.name,
-              email: loadedVendor.email,
-              verifyEmail: loadedVendor.verifyEmail,
-              phoneNo: loadedVendor.phoneNo,
-              verifyPhoneNo: loadedVendor.verifyPhoneNo,
-              type: loadedVendor.type,
-              rating: loadedVendor.rating,
-              ratingCount: loadedVendor.ratingCount,
-              wageRate: loadedVendor.wageRate,
-              gender: loadedVendor.gender,
-              balance: loadedVendor.balance,
-              address: loadedVendor.address,
-              message: "Email Updated Successfully ",
+        Vendor.findOne({ email: email }).then((resuslt) => {
+          if (resuslt?.email)
+            return res.status(401).json({ message: "Email already exist !" });
+
+          Vendor.findByIdAndUpdate(
+            vendorId,
+            { email },
+            { returnDocument: "after" }
+          )
+            .then((result) => {
+              if (!result) {
+                const error = new Error("Could not find Vendor.");
+                error.statusCode = 404;
+                throw error;
+              }
+              loadedVendor = result;
+              verifiedEmail = false;
+              res.status(200).json({
+                email: loadedVendor.email,
+                message: "Email Updated Successfully ",
+              });
+            })
+            .catch((err) => {
+              if (!err.statusCode) {
+                err.statusCode = 500;
+              }
+              next(err);
             });
-          })
-          .catch((err) => {
-            if (!err.statusCode) {
-              err.statusCode = 500;
-            }
-            next(err);
-          });
+        });
       else {
         res.status(404).json({ message: "Not Verified Vendor" });
       }
@@ -394,7 +346,6 @@ exports.vendor_controller_patch_email = (req, res, next) => {
 exports.vendor_controller_patch_wageRate = (req, res, next) => {
   const wageRate = req.body.wageRate;
   const vendorId = req.body.vendorId;
-  const token = req.body.token;
   let loadedVendor;
   Vendor.findByIdAndUpdate(vendorId, { wageRate }, { returnDocument: "after" })
     .then((result) => {
@@ -405,20 +356,7 @@ exports.vendor_controller_patch_wageRate = (req, res, next) => {
       }
       loadedVendor = result;
       res.status(200).json({
-        token: token,
-        vendorId: loadedVendor._id,
-        name: loadedVendor.name,
-        email: loadedVendor.email,
-        verifyEmail: loadedVendor.verifyEmail,
-        phoneNo: loadedVendor.phoneNo,
-        verifyPhoneNo: loadedVendor.verifyPhoneNo,
-        type: loadedVendor.type,
-        gender: loadedVendor.gender,
-        rating: loadedVendor.rating,
-        ratingCount: loadedVendor.ratingCount,
         wageRate: loadedVendor.wageRate,
-        balance: loadedVendor.balance,
-        address: loadedVendor.address,
         message: "Wage Rate Updated Successfully ",
       });
     })
@@ -461,192 +399,238 @@ exports.vendor_controller_getOrders = (req, res, next) => {
 ///// for getting vendor share //////
 //////////////////////////////////////
 
-exports.vendor_controller_getShare = (req, res, next) => {
-  const vendorId = req.params.vendorId;
-  let loadedVendor;
-  Vendor.findOne({ _id: vendorId })
+exports.vendor_controller_getShare = async (req, res, next) => {
+  try {
+    const vendorId = req.params.vendorId;
+    const skip = parseInt(req.params.skip) || 0; // Default skip to 0 if not provided
+    const limit = 12; // Default limit to 12 if not provided
 
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedVendor = result;
-      res.status(200).json({ share: loadedVendor.share });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+    // Retrieve vendor document
+    const vendor = await Vendor.findOne({ _id: vendorId }).lean();
+
+    if (!vendor) {
+      const error = new Error("Could not find Vendor.");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Reverse the share array and paginate
+    const reversedShare = vendor.share.slice().reverse();
+    const paginatedShare = reversedShare.slice(skip, skip + limit);
+
+    res.status(200).json({ share: paginatedShare, total: vendor.share.length });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////
 //// for bookings by vendor //////
 /////////////////////////////////
 
-exports.vendor_controller_bookNowV = (req, res, next) => {
-  const vendorId = req.params.vendorId;
+exports.vendor_controller_bookNowV = async (req, res, next) => {
+  try {
+    const {
+      bookingId,
+      vendorUser,
+      name,
+      phoneNo,
+      vill,
+      post,
+      dist,
+      pincode,
+      date,
+      month,
+      year,
+    } = req.body;
 
-  const bookingId = req.body.bookingId;
-  const vendorUser = req.body.vendorId;
-  const name = req.body.name;
-  const phoneNo = req.body.phoneNo;
-  const vill = req.body.vill;
-  const post = req.body.post;
-  const dist = req.body.dist;
-  const pincode = req.body.pincode;
-  const date = req.body.date;
-  const month = req.body.month;
-  const year = req.body.year;
-  const bookingTime = Date.now();
+    const vendorId = req.params.vendorId;
+    const bookingTime = Date.now();
+    const bookingCost = 5;
 
-  Vendor.findById(vendorId)
-    .then((result) => {
-      let balance = result.balance - 5;
-      Vendor.findByIdAndUpdate(
-        vendorId,
-        {
-          $push: {
-            bookings: {
-              bookingId,
-              name: name,
-              phoneNo: phoneNo,
-              address: { vill: vill, post: post, dist: dist, pincode },
-              date: date,
-              month: month,
-              year: year,
-              cancelOrder: false,
-              orderCompleted: false,
-              bookingTime,
-              cancelTime: "",
-              rating: 0,
-            },
+    const vendor = await Vendor.findById(vendorId).select("balance");
+    const vendorUserDoc = await Vendor.findById(vendorUser).select("balance");
+
+    if (!vendor || !vendorUserDoc) {
+      return res
+        .status(404)
+        .json({ message: "Vendor or vendor user not found." });
+    }
+
+    if (vendor.balance < bookingCost || vendorUserDoc.balance < bookingCost) {
+      return res.status(400).json({ message: "Insufficient balance." });
+    }
+
+    const updatedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      {
+        $push: {
+          bookings: {
+            bookingId,
+            name,
+            phoneNo,
+            address: { vill, post, dist, pincode },
+            date,
+            month,
+            year,
+            cancelOrder: false,
+            orderCompleted: false,
+            bookingTime,
+            cancelTime: "",
+            rating: 0,
           },
-          balance,
         },
-        { returnDocument: "after" }
-      ).then((suc) => {
-        Vendor.findById(vendorUser).then((result) => {
-          let balance = result.balance - 5;
+        $inc: { balance: -bookingCost },
+      },
+      { new: true }
+    );
 
-          Vendor.findByIdAndUpdate(
-            vendorUser,
-            {
-              balance,
-            },
-            { returnDocument: "after" }
-          )
-            .then((suc) => {
-              res.status(200).json({ message: "Booking Done..!" });
-            })
-            .catch((err) => console.log(err, "er"));
-        });
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+    const updatedVendorUser = await Vendor.findByIdAndUpdate(
+      vendorUser,
+      { $inc: { balance: -bookingCost } },
+      { new: true }
+    );
+
+    res
+      .status(200)
+      .json({ message: "Booking Done..!", balance: updatedVendorUser.balance });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
 };
 
 ///////////////////////////////////
 //// for bookings by user //////
 /////////////////////////////////
 
-exports.vendor_controller_bookNowU = (req, res, next) => {
-  const vendorId = req.params.vendorId;
+exports.vendor_controller_bookNowU = async (req, res, next) => {
+  try {
+    const {
+      bookingId,
+      userId,
+      name,
+      phoneNo,
+      vill,
+      post,
+      dist,
+      pincode,
+      date,
+      month,
+      year,
+    } = req.body;
+    const vendorId = req.params.vendorId;
 
-  const bookingId = req.body.bookingId;
-  const userId = req.body.userId;
-  const name = req.body.name;
-  const phoneNo = req.body.phoneNo;
-  const vill = req.body.vill;
-  const post = req.body.post;
-  const dist = req.body.dist;
-  const pincode = req.body.pincode;
-  const date = req.body.date;
-  const month = req.body.month;
-  const year = req.body.year;
-  const bookingTime = Date.now();
-  Vendor.findById(vendorId)
-    .then((result) => {
-      let balance = result.balance - 5;
-      Vendor.findByIdAndUpdate(
-        vendorId,
-        {
-          $push: {
-            bookings: {
-              bookingId,
-              name: name,
-              phoneNo: phoneNo,
-              address: { vill: vill, post: post, dist: dist, pincode },
-              date: date,
-              month: month,
-              year: year,
-              cancelOrder: false,
-              orderCompleted: false,
-              bookingTime,
-              cancelTime: "",
-              rating: 0,
-            },
+    const bookingTime = Date.now();
+    const bookingCost = 5;
+
+    const vendor = await Vendor.findById(vendorId).select("balance");
+    const user = await User.findById(userId).select("balance");
+
+    if (!vendor || !user) {
+      return res.status(404).json({ message: "Vendor or user not found." });
+    }
+
+    if (vendor.balance < bookingCost || user.balance < bookingCost) {
+      return res.status(400).json({ message: "Insufficient balance." });
+    }
+
+    const updatedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      {
+        $push: {
+          bookings: {
+            bookingId,
+            name,
+            phoneNo,
+            address: { vill, post, dist, pincode },
+            date,
+            month,
+            year,
+            cancelOrder: false,
+            orderCompleted: false,
+            bookingTime,
+            cancelTime: "",
+            rating: 0,
           },
-          balance,
         },
-        { returnDocument: "after" }
-      ).then((suc) => {
-        User.findOne({ _id: userId }).then((result) => {
-          let balance = result.balance - 5;
-          User.findByIdAndUpdate(
-            userId,
-            {
-              balance,
-            },
-            { returnDocument: "after" }
-          )
-            .then((suc) => res.status(200).json({ message: "Booking Done..!" }))
-            .catch((err) => console.log(err));
-        });
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+        $inc: { balance: -bookingCost },
+      },
+      { new: true }
+    );
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $inc: { balance: -bookingCost } },
+      { new: true }
+    );
+
+    res
+      .status(200)
+      .json({ message: "Booking Done..!", balance: updatedUser.balance });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
 };
 
 //////////////////////////////////////
 //// to get bookings by vendor //////
 ////////////////////////////////////
 
-exports.vendor_controller_getBookings = (req, res, next) => {
-  const vendorId = req.params.vendorId;
-  const bookings = [];
-  Vendor.findOne({ _id: vendorId })
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      result.bookings.map((data) => {
-        bookings.push(data);
-      });
+exports.vendor_controller_getBookings = async (req, res, next) => {
+  try {
+    const vendorId = req.params.vendorId;
+    const year = parseInt(req.params.year); // Filter by year
+    const month = parseInt(req.params.month); // Filter by month
 
-      res.status(200).json(bookings);
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+    let pipeline = [
+      {
+        $match: {
+          _id: new ObjectId(vendorId),
+        },
+      },
+      {
+        $unwind: "$bookings",
+      },
+      {
+        $addFields: {
+          bookingYear: "$bookings.year",
+          bookingMonth: "$bookings.month",
+        },
+      },
+      {
+        $match: {
+          bookingYear: year,
+          bookingMonth: month,
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          booking: "$bookings",
+        },
+      },
+    ];
+
+    const vendor = await Vendor.aggregate(pipeline);
+
+    if (!vendor || vendor.length === 0) {
+      return res.status(200).json({
+        data: [],
+        message:
+          "Could not find Vendor bookings for the specified month and year.",
+      });
+    }
+
+    res.status(200).json(vendor);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
 };
 
 ///////////////////////////////////////
@@ -681,6 +665,7 @@ exports.vendor_controller_getVendor = (req, res, next) => {
         wageRate: loadedVendor.wageRate,
         balance: loadedVendor.balance,
         address: loadedVendor.address,
+        profilePic: loadedVendor.profilePic,
       });
     })
     .catch((err) => {
@@ -695,59 +680,110 @@ exports.vendor_controller_getVendor = (req, res, next) => {
 //// for getting all vendor by user //////
 //////////////////////////////////////////
 
-exports.vendor_controller_getAll = (req, res, next) => {
-  const type = req.params.type;
-  const pincode = req.params.pincode;
-  const bookingDate = req.params.bookingDate;
+exports.vendor_controller_getAll = async (req, res, next) => {
+  try {
+    const type = req.params.type;
+    const pincode = req.params.pincode;
+    const bookingDate = req.params.bookingDate;
+    const limit = 12; // Default limit to 12 if not provided
+    const page = parseInt(req.params.page) || 1; // Default page to 1 if not provided
+    const minRating = parseFloat(req.params.minRating) || 0; // Default minRating to 0 if not provided
+    const minWageRate = parseFloat(req.params.minWageRate) || 0; // Default minWageRate to 0 if not provided
 
-  const vendorList = new Set();
-  const userGetVendor = [];
-  Bookings.find({
-    type: type,
-    pincode: pincode,
-    bookingDate: bookingDate,
-  })
-
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-
-      result.forEach((data) => {
-        if (!data.cancelOrder && data.vendorId)
-          vendorList.add(data.vendorId?.toString());
-      });
-
-      Vendor.find({ type: type, pincode: pincode }).then((result) => {
-        result.forEach((data) => {
-          if (!vendorList.has(data._id?.toString()) && data.wageRate) {
-            const phoneNo = data.phoneNo.toString();
-            const maskedNumber =
-              phoneNo.substring(0, 2) + "*".repeat(6) + phoneNo.substring(8);
-
-            userGetVendor.push({
-              vendorId: data._id,
-              name: data.name,
-              type: data.type,
-              gender: data.gender,
-              phoneNo: maskedNumber,
-              rating: data.rating,
-              ratingCount: data.ratingCount,
-              wageRate: data.wageRate,
-            });
-          }
-        });
-        res.status(200).json(userGetVendor);
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+    const vendorList = await Bookings.distinct("vendorId", {
+      type: type,
+      pincode: pincode,
+      bookingDate: bookingDate,
+      cancelOrder: { $ne: true },
     });
+
+    const totalVendorsCount = await Vendor.aggregate([
+      {
+        $match: {
+          type: type,
+          pincode: pincode,
+          _id: { $nin: vendorList },
+          balance: { $gt: 4 },
+          wageRate: { $exists: true },
+          rating: { $gte: minRating }, // Filter by minimum rating
+          wageRate: { $gte: minWageRate }, // Filter by minimum wageRate
+        },
+      },
+      {
+        $count: "count",
+      },
+    ]);
+
+    const skip = (page - 1) * limit;
+    const vendors = await Vendor.aggregate([
+      {
+        $match: {
+          type: type,
+          pincode: pincode,
+          _id: { $nin: vendorList },
+          balance: { $gt: 4 },
+          wageRate: { $exists: true },
+          rating: { $gte: minRating }, // Filter by minimum rating
+          wageRate: { $gte: minWageRate }, // Filter by minimum wageRate
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          type: 1,
+          gender: 1,
+          phoneNo: {
+            $toString: "$phoneNo", // Convert phoneNo to string
+          },
+          rating: 1,
+          ratingCount: 1,
+          wageRate: 1,
+          profilePic: 1,
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          type: 1,
+          gender: 1,
+          phoneNo: {
+            $let: {
+              vars: {
+                len: { $strLenBytes: "$phoneNo" },
+              },
+              in: {
+                $concat: [
+                  { $substrBytes: ["$phoneNo", 0, 2] },
+                  "******",
+                  {
+                    $substrBytes: ["$phoneNo", { $subtract: ["$$len", 2] }, 2],
+                  },
+                ],
+              },
+            },
+          },
+          rating: 1,
+          ratingCount: 1,
+          wageRate: 1,
+          profilePic: 1,
+        },
+      },
+      { $skip: skip }, // Skip records based on page and limit
+      { $limit: limit }, // Limit the number of records
+    ]);
+
+    res.status(200).json({
+      total: totalVendorsCount.length > 0 ? totalVendorsCount[0].count : 0,
+      vendors,
+    });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////

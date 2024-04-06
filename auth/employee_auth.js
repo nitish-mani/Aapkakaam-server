@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken");
 
 const Employee = require("../models/employee");
 
+const secretKey =
+  "thisismyfirstcompanywhereweservepeopletommaketheirlifeeasy/employee";
+
 //////////////////////////////
 //// for employee signup ////
 /////////////////////////////
@@ -20,12 +23,6 @@ exports.signup = (req, res, next) => {
   const phoneNo = req.body.phoneNo;
   const email = req.body.email;
   const password = req.body.password;
-  const vill = req.body.vill;
-  const post = req.body.post;
-  const tahsil = req.body.tahsil;
-  const dist = req.body.dist;
-  const state = req.body.state;
-  const pincode = req.body.pincode;
 
   Employee.findOne({ email: email }).then((resuslt) => {
     if (resuslt?.email)
@@ -38,12 +35,6 @@ exports.signup = (req, res, next) => {
           phoneNo: phoneNo,
           email: email,
           password: hashedPw,
-          vill: vill,
-          post: post,
-          tahsil: tahsil,
-          dist: dist,
-          state: state,
-          pincode: pincode,
         });
         return employee.save();
       })
@@ -72,7 +63,7 @@ exports.login = (req, res, next) => {
   Employee.findOne({ email: email })
     .then((employee) => {
       if (!employee) {
-        const error = new Error("A user with this email could not found.");
+        const error = new Error("A employee with this email could not found.");
         error.statusCode = 401;
         throw error;
       }
@@ -90,12 +81,22 @@ exports.login = (req, res, next) => {
           email: loadedEmployee.email,
           employeeId: loadedEmployee._id.toString(),
         },
-        "somesupersecretsecret",
-        { expiresIn: "1h" }
+        secretKey,
+        { expiresIn: "72h" }
       );
-      res
-        .status(200)
-        .json({ token: token, employeeId: loadedEmployee._id.toString() });
+      res.status(200).json({
+        token: token,
+        employeeId: loadedEmployee._id,
+        name: loadedEmployee.name,
+        email: loadedEmployee.email,
+        verifyEmail: loadedEmployee.verifyEmail,
+        phoneNo: loadedEmployee.phoneNo,
+        verifyPhoneNo: loadedEmployee.verifyPhoneNo,
+        balance: loadedEmployee.balance,
+        address: loadedEmployee.address,
+        gender: loadedEmployee.gender,
+        message: "Employee logged In Successfully ",
+      });
     })
     .catch((err) => {
       if (!err.statusCode) {

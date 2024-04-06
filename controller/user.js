@@ -27,14 +27,14 @@ exports.user_controller_verify_email = (req, res, next) => {
           host: "smtp.gmail.com",
           port: 587,
           auth: {
-            user: "nitishmani63@gmail.com",
-            pass: "ivczvwwtjmeqlddu",
+            user: "otp-verification@aapkakaam.com",
+            pass: "jwonqzmtwkmlideu",
           },
         });
 
         function sendOTP(email, otp) {
           const mailOptions = {
-            from: "aapkakaam19@yahoo.com",
+            from: "otp-verification@aapkakaam.com",
             to: email,
             subject: "OTP Verification",
             text: `Your OTP for email verification is: ${otp}`,
@@ -106,7 +106,8 @@ exports.user_controller_verify_phoneNo = (req, res, next) => {
               verified: true,
               otpId: result._id,
             })
-          );
+          )
+          .catch((err) => res.send(err.response.data));
       });
     })
     .catch((err) => res.send(err.response.data));
@@ -174,7 +175,6 @@ exports.user_controller_patch_password = (req, res, next) => {
 
 exports.user_controller_patch_address = (req, res, next) => {
   const userId = req.body.userId;
-  const token = req.body.token;
 
   const vill = req.body.vill;
   const post = req.body.post;
@@ -197,16 +197,7 @@ exports.user_controller_patch_address = (req, res, next) => {
       loadedUser = result;
 
       res.status(200).json({
-        token: token,
-        userId: loadedUser._id,
-        name: loadedUser.name,
-        email: loadedUser.email,
-        verifyEmail: loadedUser.verifyEmail,
-        phoneNo: loadedUser.phoneNo,
-        verifyPhoneNo: loadedUser.verifyPhoneNo,
-        balance: loadedUser.balance,
         address: loadedUser.address,
-        gender: loadedUser.gender,
         message: "Address Updated Successfully ",
       });
     })
@@ -225,7 +216,6 @@ exports.user_controller_patch_address = (req, res, next) => {
 exports.user_controller_patch_name = (req, res, next) => {
   const name = req.body.name;
   const userId = req.body.userId;
-  const token = req.body.token;
   let loadedUser;
   User.findByIdAndUpdate(userId, { name }, { returnDocument: "after" })
     .then((result) => {
@@ -236,16 +226,7 @@ exports.user_controller_patch_name = (req, res, next) => {
       }
       loadedUser = result;
       res.status(200).json({
-        token: token,
-        userId: loadedUser._id,
         name: loadedUser.name,
-        email: loadedUser.email,
-        verifyEmail: loadedUser.verifyEmail,
-        phoneNo: loadedUser.phoneNo,
-        verifyPhoneNo: loadedUser.verifyPhoneNo,
-        balance: loadedUser.balance,
-        address: loadedUser.address,
-        gender: loadedUser.gender,
         message: "Name Updated Successfully ",
       });
     })
@@ -264,7 +245,6 @@ exports.user_controller_patch_name = (req, res, next) => {
 exports.user_controller_patch_phoneNo = (req, res, next) => {
   const phoneNo = req.body.phoneNo;
   const userId = req.body.userId;
-  const token = req.body.token;
   const otpId = req.body.otpId;
   let loadedUser;
   OtpAuth.findById(otpId)
@@ -280,16 +260,7 @@ exports.user_controller_patch_phoneNo = (req, res, next) => {
             loadedUser = result;
             verifiedNumber = false;
             res.status(200).json({
-              token: token,
-              userId: loadedUser._id,
-              name: loadedUser.name,
-              email: loadedUser.email,
-              verifyEmail: loadedUser.verifyEmail,
               phoneNo: loadedUser.phoneNo,
-              verifyPhoneNo: loadedUser.verifyPhoneNo,
-              balance: loadedUser.balance,
-              address: loadedUser.address,
-              gender: loadedUser.gender,
               message: "Phone Number Updated Successfully ",
             });
           })
@@ -314,41 +285,36 @@ exports.user_controller_patch_phoneNo = (req, res, next) => {
 exports.user_controller_patch_email = (req, res, next) => {
   const email = req.body.email;
   const userId = req.body.userId;
-  const token = req.body.token;
   const otpId = req.body.otpId;
   let loadedUser;
   OtpAuth.findById(otpId)
     .then((result) => {
       if (result?.verifiedEmail)
-        User.findByIdAndUpdate(userId, { email }, { returnDocument: "after" })
-          .then((result) => {
-            if (!result) {
-              const error = new Error("Could not find User.");
-              error.statusCode = 404;
-              throw error;
-            }
-            loadedUser = result;
-            verifiedEmail = false;
-            res.status(200).json({
-              token: token,
-              userId: loadedUser._id,
-              name: loadedUser.name,
-              email: loadedUser.email,
-              verifyEmail: loadedUser.verifyEmail,
-              phoneNo: loadedUser.phoneNo,
-              verifyPhoneNo: loadedUser.verifyPhoneNo,
-              balance: loadedUser.balance,
-              address: loadedUser.address,
-              gender: loadedUser.gender,
-              message: "Email Updated Successfully ",
+        User.findOne({ email: email }).then((resuslt) => {
+          if (resuslt?.email)
+            return res.status(401).json({ message: "Email already exist !" });
+
+          User.findByIdAndUpdate(userId, { email }, { returnDocument: "after" })
+            .then((result) => {
+              if (!result) {
+                const error = new Error("Could not find User.");
+                error.statusCode = 404;
+                throw error;
+              }
+              loadedUser = result;
+              verifiedEmail = false;
+              res.status(200).json({
+                email: loadedUser.email,
+                message: "Email Updated Successfully ",
+              });
+            })
+            .catch((err) => {
+              if (!err.statusCode) {
+                err.statusCode = 500;
+              }
+              next(err);
             });
-          })
-          .catch((err) => {
-            if (!err.statusCode) {
-              err.statusCode = 500;
-            }
-            next(err);
-          });
+        });
       else {
         res.status(404).json({ message: "Not Verified User" });
       }

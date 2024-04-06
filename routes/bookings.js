@@ -10,21 +10,21 @@ const bookings_controller = require("../controller/bookings");
 router.post(
   "/postToBookingsU",
   is_user,
-  bookings_controller.bookings_controller_post
+  bookings_controller.bookings_controller_postU
 );
 router.post(
   "/postToBookingsV",
   is_vendor,
-  bookings_controller.bookings_controller_post
+  bookings_controller.bookings_controller_postV
 );
 
 router.get(
-  "/getOrdersU/:userId",
+  "/getOrdersU/:userId/:pageNo",
   is_user,
   bookings_controller.bookings_controller_get
 );
 router.get(
-  "/getOrdersV/:userId",
+  "/getOrdersV/:userId/:pageNo",
   is_vendor,
   bookings_controller.bookings_controller_get
 );

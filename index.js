@@ -5,6 +5,7 @@ const vendorRoute = require("./routes/vendor");
 const employeeRoute = require("./routes/employee");
 const bookingsRoute = require("./routes/bookings");
 const shareRoute = require("./routes/share");
+const adminRoute = require("./routes/admin");
 const path = require("path");
 require("dotenv").config();
 
@@ -15,13 +16,13 @@ const PORT = process.env.PORT;
 const app = express();
 
 app.use(express.json());
-app.use(express.static(path.join(pathLoc, "dist")));
+// app.use(express.static(path.join(pathLoc, "dist")));
 
-app.get("/", function (req, res) {
-  res.sendFile(path.join(pathLoc, "dist", "index.html"));
-});
+// app.get("/", function (req, res) {
+//   res.sendFile(path.join(pathLoc, "dist", "index.html"));
+// });
 
-const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
+const allowedOrigin = "*" || ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader(
@@ -32,7 +33,7 @@ app.use((req, res, next) => {
 
   next();
 });
-
+app.use("/admin", adminRoute);
 app.use("/user", userRoute);
 app.use("/vendor", vendorRoute);
 app.use("/employee", employeeRoute);
@@ -47,13 +48,13 @@ app.use((error, req, res, next) => {
   res.status(status).json({ message: message, data: data });
 });
 
-app.use("/category", (req, res) => {
-  res.sendFile(path.join(pathLoc, "dist", "index.html"));
-});
+// app.use("/category", (req, res) => {
+//   res.sendFile(path.join(pathLoc, "dist", "index.html"));
+// });
 
-app.use("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "err.html"));
-});
+// app.use("/", (req, res) => {
+//   res.sendFile(path.join(__dirname, "err.html"));
+// });
 
 async function main() {
   await mongoose.connect(MONGODB_URI);
