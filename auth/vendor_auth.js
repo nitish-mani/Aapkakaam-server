@@ -2,6 +2,7 @@ const { validationResult } = require("express-validator");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+const Employee = require("../models/employee");
 const Vendor = require("../models/vendor");
 const User = require("../models/user");
 const OtpAuth = require("../models/otpAuth");
@@ -87,6 +88,24 @@ exports.signup = async (req, res, next) => {
         await Model.findByIdAndUpdate(sharedBy, {
           $push: {
             share: { name, phoneNo, date: new Date().toDateString() },
+          },
+          balance,
+        });
+      }
+    }else if (cd == "employee") {
+      const sharedUser = await Employee.findById(sharedBy);
+      if (sharedUser) {
+        const balance = sharedUser.balance + 5;
+        await Employee.findByIdAndUpdate(sharedBy, {
+          $push: {
+            share: {
+              name,
+              phoneNo,
+              date: new Date().getDate(),
+              month: new Date().getMonth(),
+              year: new Date().getFullYear(),
+              time: new Date().toLocaleTimeString(),
+            },
           },
           balance,
         });

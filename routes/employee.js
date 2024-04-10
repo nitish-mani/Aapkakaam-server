@@ -24,6 +24,7 @@ router.post(
 router.post("/otpVerification", employee_controller.employee_controller_otp);
 
 router.post("/login", employee_auth.login);
+router.post("/signup", employee_auth.signup);
 
 router.patch(
   "/edit/password",
@@ -52,7 +53,7 @@ router.patch(
 );
 
 router.get(
-  "/getShare/:employeeId",
+  "/getShare/:employeeId/:date/:month/:year",
   is_employee,
   employee_controller.employee_controller_getShare
 );

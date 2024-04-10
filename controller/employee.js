@@ -110,7 +110,7 @@ exports.employee_controller_verify_phoneNo = (req, res, next) => {
           );
       });
     })
-    .catch((err) => res.send(err.response.data));
+    .catch((err) => res.status(400).send(err));
 };
 
 exports.employee_controller_otp = (req, res, next) => {
@@ -220,6 +220,7 @@ exports.employee_controller_patch_address = (req, res, next) => {
       next(err);
     });
 };
+
 
 ///////////////////////////////////////
 ///// for modifing user name //////
@@ -375,24 +376,47 @@ exports.employee_controller_patch_email = (req, res, next) => {
 
 exports.employee_controller_getShare = (req, res, next) => {
   const employeeId = req.params.employeeId;
-  let loadedEmployee;
-  Employee.findOne({ _id: employeeId })
+  const date = parseInt(req.params.date);
+  const month = parseInt(req.params.month);
+  const year = parseInt(req.params.year);
 
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Employee.");
-        error.statusCode = 404;
-        throw error;
+  Employee.aggregate([
+    {
+      $match: {
+        _id: mongoose.Types.ObjectId(employeeId), // Assuming you're using Mongoose
       }
-      loadedEmployee = result;
-      res.status(200).json({ share: loadedEmployee.share });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
+    },
+    {
+      $unwind: "$share" // Deconstructing the array field 'share'
+    },
+    {
+      $match: {
+        "share.date": date,
+        "share.month": month,
+        "share.year": year
       }
-      next(err);
-    });
+    },
+    {
+      $group: {
+        _id: "$_id",
+        share: { $push: "$share" }
+      }
+    }
+  ])
+  .then((result) => {
+    if (!result || result.length === 0) {
+      const error = new Error("Could not find Employee.");
+      error.statusCode = 404;
+      throw error;
+    }
+    res.status(200).json({ share: result[0].share });
+  })
+  .catch((err) => {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  });
 };
 
 ///////////////////////////////////////

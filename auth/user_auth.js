@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const OtpAuth = require("../models/otpAuth");
 const User = require("../models/user");
 const Vendor = require("../models/vendor");
+const Employee = require("../models/employee");
 
 const secretKey =
   "thisismyfirstcompanywhereweservepeopletommaketheirlifeeasy/user";
@@ -34,7 +35,6 @@ exports.signup = async (req, res, next) => {
       validPhoneNoId,
       validEmailId,
     } = req.body;
-
     const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const regexPass =
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
@@ -90,6 +90,24 @@ exports.signup = async (req, res, next) => {
         await Model.findByIdAndUpdate(sharedBy, {
           $push: {
             share: { name, phoneNo, date: new Date().toDateString() },
+          },
+          balance,
+        });
+      }
+    } else if (cd == "employee") {
+      const sharedUser = await Employee.findById(sharedBy);
+      if (sharedUser) {
+        const balance = sharedUser.balance + 5;
+        await Employee.findByIdAndUpdate(sharedBy, {
+          $push: {
+            share: {
+              name,
+              phoneNo,
+              date: new Date().getDate(),
+              month: new Date().getMonth(),
+              year: new Date().getFullYear(),
+              time: new Date().toLocaleTimeString(),
+            },
           },
           balance,
         });

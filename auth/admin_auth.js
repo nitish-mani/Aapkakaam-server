@@ -2,17 +2,18 @@ const { validationResult } = require("express-validator");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+const OtpAuth = require("../models/otpAuth");
 const Admin = require("../models/admin");
 
 const secretKey =
   "thisismyfirstcompanywhereweservepeopletommaketheirlifeeasy/admin";
-const email_admin = "aapkakaam5@gmail.com";
+const email_admin = "admin@aapkakaam.com";
 
 //////////////////////////////
 //// for admin signup ////
 /////////////////////////////
 
-exports.signup = (req, res, next) => {
+exports.signup = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const error = new Error("Validation failed.");
@@ -24,6 +25,37 @@ exports.signup = (req, res, next) => {
   const email = req.body.email;
   const phoneNo = req.body.phoneNo;
   const password = req.body.password;
+  const validEmailId=req.body.validEmailId;
+  const validPhoneNoId=req.body.validPhoneNoId;
+  
+  const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const regexPass =
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
+
+  if (!regexEmail.test(email)) {
+    return res.status(401).json({ message: "Invalid Email" });
+  }
+  if (!regexPass.test(password)) {
+    return res.status(401).json({
+      message:
+        "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character",
+    });
+  }
+
+  const [checkPhoneNoValid, checkEmailValid] = await Promise.all([
+    OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
+    OtpAuth.findById(validEmailId).select("verifiedEmail"),
+  ]);
+  const verifiedEmail = checkEmailValid?.verifiedEmail;
+  const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
+
+  if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
+    return res.status(401).json({ message: "Number not verified" });
+  }
+
+  if (!checkEmailValid || !checkEmailValid.verifiedEmail) {
+    return res.status(401).json({ message: "Email not verified" });
+  }
 
   if (email === email_admin)
     Admin.findOne({ email: email }).then((resuslt) => {
@@ -52,9 +84,9 @@ exports.signup = (req, res, next) => {
           next(err);
         });
     });
-    else{
-        res.status(404).json({message:"Not Authorized...Thanks..."})
-    }
+  else {
+    res.status(404).json({ message: "Not Authorized...Thanks..." });
+  }
 };
 
 ///////////////////////////////
