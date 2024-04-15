@@ -1,8 +1,13 @@
 const { default: axios } = require("axios");
-const Admin = require("../models/admin");
 const nodemailer = require("nodemailer");
 const OtpAuth = require("../models/otpAuth");
 const bcrypt = require("bcryptjs");
+
+const Admin = require("../models/admin");
+const User = require("../models/user");
+const Vendor = require("../models/vendor");
+const Employee = require("../models/employee");
+const Bookings = require("../models/bookings");
 
 const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
 
@@ -55,7 +60,7 @@ exports.admin_controller_verify_email = (req, res, next) => {
         sendOTP(email, otpE);
       });
     })
-    .catch((err) => console.log(err, "er"));
+    .catch((err) => res.json(err));
 };
 
 exports.admin_controller_otpE = (req, res, next) => {
@@ -146,7 +151,7 @@ exports.admin_controller_patch_password = (req, res, next) => {
         bcrypt
           .hash(password, 12)
           .then((hashPass) => {
-            User.findOneAndUpdate(
+            Admin.findOneAndUpdate(
               { email: email },
               { password: hashPass },
               { returnDocument: "after" }
@@ -167,4 +172,9 @@ exports.admin_controller_patch_password = (req, res, next) => {
     .catch((err) => {
       res.status(404).json({ message: "Not Authorized" });
     });
+};
+
+exports.admin_controller_get_employee_details = async (req, res, next) => {
+  const employees = await Employee.find({}, "name phoneNo share");
+  res.status(200).json(employees);
 };

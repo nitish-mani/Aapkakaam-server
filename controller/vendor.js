@@ -61,7 +61,7 @@ exports.vendor_controller_verify_email = (req, res, next) => {
         sendOTP(email, otpE);
       });
     })
-    .catch((err) => console.log(err, "er"));
+    .catch((err) => res.json(err));
 };
 
 exports.vendor_controller_otpE = (req, res, next) => {
@@ -170,7 +170,6 @@ exports.vendor_controller_patch_password = async (req, res, next) => {
 
     res.status(201).json({ message: "Password changed successfully" });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -449,7 +448,7 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
 
     const vendorId = req.params.vendorId;
     const bookingTime = Date.now();
-    const bookingCost = 5;
+    const bookingCost = 30;
 
     const vendor = await Vendor.findById(vendorId).select("balance");
     const vendorUserDoc = await Vendor.findById(vendorUser).select("balance");
@@ -498,7 +497,6 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
       .status(200)
       .json({ message: "Booking Done..!", balance: updatedVendorUser.balance });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -525,7 +523,7 @@ exports.vendor_controller_bookNowU = async (req, res, next) => {
     const vendorId = req.params.vendorId;
 
     const bookingTime = Date.now();
-    const bookingCost = 5;
+    const bookingCost = 30;
 
     const vendor = await Vendor.findById(vendorId).select("balance");
     const user = await User.findById(userId).select("balance");
@@ -572,7 +570,6 @@ exports.vendor_controller_bookNowU = async (req, res, next) => {
       .status(200)
       .json({ message: "Booking Done..!", balance: updatedUser.balance });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -628,7 +625,6 @@ exports.vendor_controller_getBookings = async (req, res, next) => {
 
     res.status(200).json(vendor);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -639,7 +635,6 @@ exports.vendor_controller_getBookings = async (req, res, next) => {
 
 exports.vendor_controller_getVendor = (req, res, next) => {
   const vendorId = req.params.vendorId;
-  const token = req.get("Authorization").split(" ")[1];
   let loadedVendor;
   Vendor.findOne({ _id: vendorId })
 
@@ -651,21 +646,9 @@ exports.vendor_controller_getVendor = (req, res, next) => {
       }
       loadedVendor = result;
       res.status(200).json({
-        token: token,
-        vendorId: loadedVendor._id,
-        name: loadedVendor.name,
-        email: loadedVendor.email,
-        verifyEmail: loadedVendor.verifyEmail,
-        phoneNo: loadedVendor.phoneNo,
-        verifyPhoneNo: loadedVendor.verifyPhoneNo,
-        gender: loadedVendor.gender,
-        type: loadedVendor.type,
         rating: loadedVendor.rating,
         ratingCount: loadedVendor.ratingCount,
-        wageRate: loadedVendor.wageRate,
         balance: loadedVendor.balance,
-        address: loadedVendor.address,
-        profilePic: loadedVendor.profilePic,
       });
     })
     .catch((err) => {
@@ -703,7 +686,7 @@ exports.vendor_controller_getAll = async (req, res, next) => {
           type: type,
           pincode: pincode,
           _id: { $nin: vendorList },
-          balance: { $gt: 4 },
+          balance: { $gt: 25 },
           wageRate: { $exists: true },
           rating: { $gte: minRating }, // Filter by minimum rating
           wageRate: { $gte: minWageRate }, // Filter by minimum wageRate
@@ -721,7 +704,7 @@ exports.vendor_controller_getAll = async (req, res, next) => {
           type: type,
           pincode: pincode,
           _id: { $nin: vendorList },
-          balance: { $gt: 4 },
+          balance: { $gt: 25 },
           wageRate: { $exists: true },
           rating: { $gte: minRating }, // Filter by minimum rating
           wageRate: { $gte: minWageRate }, // Filter by minimum wageRate

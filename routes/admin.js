@@ -22,4 +22,9 @@ router.post("/otpVerification", admin_controller.admin_controller_otp);
 router.post("/signup", admin_auth.signup);
 router.post("/login", admin_auth.login);
 
+router.get(
+  "/getEmployeeDetails",
+  admin_controller.admin_controller_get_employee_details
+);
+
 module.exports = router;

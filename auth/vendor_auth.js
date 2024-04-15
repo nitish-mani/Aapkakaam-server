@@ -74,6 +74,7 @@ exports.signup = async (req, res, next) => {
       password: hashedPw,
       type: type,
       gender: gender,
+      rating: 0,
       verifyPhoneNo: verifiedNumber,
       verifyEmail: verifiedEmail,
       accountCreatedOn: new Date().toDateString(),
@@ -84,7 +85,7 @@ exports.signup = async (req, res, next) => {
       const Model = cd === "user" ? User : Vendor;
       const sharedUser = await Model.findById(sharedBy);
       if (sharedUser) {
-        let balance = sharedUser.balance + 5;
+        let balance = sharedUser.balance + 30;
         await Model.findByIdAndUpdate(sharedBy, {
           $push: {
             share: { name, phoneNo, date: new Date().toDateString() },
@@ -92,7 +93,7 @@ exports.signup = async (req, res, next) => {
           balance,
         });
       }
-    }else if (cd == "employee") {
+    } else if (cd == "employee") {
       const sharedUser = await Employee.findById(sharedBy);
       if (sharedUser) {
         const balance = sharedUser.balance + 5;
@@ -101,10 +102,11 @@ exports.signup = async (req, res, next) => {
             share: {
               name,
               phoneNo,
+              category: "vendor",
               date: new Date().getDate(),
               month: new Date().getMonth(),
               year: new Date().getFullYear(),
-              time: new Date().toLocaleTimeString(),
+              time: Date.now(),
             },
           },
           balance,

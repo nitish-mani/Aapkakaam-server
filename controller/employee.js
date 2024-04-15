@@ -4,6 +4,7 @@ const { default: axios } = require("axios");
 const nodemailer = require("nodemailer");
 const OtpAuth = require("../models/otpAuth");
 const bcrypt = require("bcryptjs");
+const { ObjectId } = require("mongodb");
 
 const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
 
@@ -56,7 +57,7 @@ exports.employee_controller_verify_email = (req, res, next) => {
         sendOTP(email, otpE);
       });
     })
-    .catch((err) => console.log(err, "er"));
+    .catch((err) => res.json(err));
 };
 
 exports.employee_controller_otpE = (req, res, next) => {
@@ -133,7 +134,7 @@ exports.employee_controller_otp = (req, res, next) => {
 };
 
 ///////////////////////////////////////
-//// for updating user password //////
+//// for updating employee password //////
 ///////////////////////////////////////
 
 exports.employee_controller_patch_password = (req, res, next) => {
@@ -163,7 +164,7 @@ exports.employee_controller_patch_password = (req, res, next) => {
               .json({ message: "employee with this Email Not found" })
           );
       else {
-        res.status(404).json({ message: "Not verified user" });
+        res.status(404).json({ message: "Not verified employee" });
       }
     })
     .catch((err) => {
@@ -172,12 +173,11 @@ exports.employee_controller_patch_password = (req, res, next) => {
 };
 
 ///////////////////////////////////////
-///// for updating user address //////
+///// for updating employee address //////
 //////////////////////////////////////
 
 exports.employee_controller_patch_address = (req, res, next) => {
   const employeeId = req.body.employeeId;
-  const token = req.body.token;
 
   const vill = req.body.vill;
   const post = req.body.post;
@@ -200,16 +200,7 @@ exports.employee_controller_patch_address = (req, res, next) => {
       loadedEmployee = result;
 
       res.status(200).json({
-        token: token,
-        employeeId: loadedEmployee._id,
-        name: loadedEmployee.name,
-        email: loadedEmployee.email,
-        verifyEmail: loadedEmployee.verifyEmail,
-        phoneNo: loadedEmployee.phoneNo,
-        verifyPhoneNo: loadedEmployee.verifyPhoneNo,
-        balance: loadedEmployee.balance,
         address: loadedEmployee.address,
-        gender: loadedEmployee.gender,
         message: "Address Updated Successfully ",
       });
     })
@@ -221,15 +212,13 @@ exports.employee_controller_patch_address = (req, res, next) => {
     });
 };
 
-
 ///////////////////////////////////////
-///// for modifing user name //////
+///// for modifing employee name //////
 //////////////////////////////////////
 
 exports.employee_controller_patch_name = (req, res, next) => {
   const name = req.body.name;
   const employeeId = req.body.employeeId;
-  const token = req.body.token;
   let loadedEmployee;
   Employee.findByIdAndUpdate(employeeId, { name }, { returnDocument: "after" })
     .then((result) => {
@@ -240,16 +229,7 @@ exports.employee_controller_patch_name = (req, res, next) => {
       }
       loadedEmployee = result;
       res.status(200).json({
-        token: token,
-        employeeId: loadedEmployee._id,
         name: loadedEmployee.name,
-        email: loadedEmployee.email,
-        verifyEmail: loadedEmployee.verifyEmail,
-        phoneNo: loadedEmployee.phoneNo,
-        verifyPhoneNo: loadedEmployee.verifyPhoneNo,
-        balance: loadedEmployee.balance,
-        address: loadedEmployee.address,
-        gender: loadedEmployee.gender,
         message: "Name Updated Successfully ",
       });
     })
@@ -262,13 +242,12 @@ exports.employee_controller_patch_name = (req, res, next) => {
 };
 
 ///////////////////////////////////////
-///// for modifing user phoneNo //////
+///// for modifing employee phoneNo //////
 //////////////////////////////////////
 
 exports.employee_controller_patch_phoneNo = (req, res, next) => {
   const phoneNo = req.body.phoneNo;
   const employeeId = req.body.employeeId;
-  const token = req.body.token;
   const otpId = req.body.otpId;
   let loadedEmployee;
   OtpAuth.findById(otpId)
@@ -288,16 +267,7 @@ exports.employee_controller_patch_phoneNo = (req, res, next) => {
             loadedEmployee = result;
             verifiedNumber = false;
             res.status(200).json({
-              token: token,
-              employeeId: loadedEmployee._id,
-              name: loadedEmployee.name,
-              email: loadedEmployee.email,
-              verifyEmail: loadedEmployee.verifyEmail,
               phoneNo: loadedEmployee.phoneNo,
-              verifyPhoneNo: loadedEmployee.verifyPhoneNo,
-              balance: loadedEmployee.balance,
-              address: loadedEmployee.address,
-              gender: loadedEmployee.gender,
               message: "Phone Number Updated Successfully ",
             });
           })
@@ -308,7 +278,7 @@ exports.employee_controller_patch_phoneNo = (req, res, next) => {
             next(err);
           });
       else {
-        res.status(404).json({ message: "Not Verified User" });
+        res.status(404).json({ message: "Not Verified employee" });
       }
     })
     .catch((err) => {
@@ -316,13 +286,12 @@ exports.employee_controller_patch_phoneNo = (req, res, next) => {
     });
 };
 ///////////////////////////////////////
-///// for modifing user email //////
+///// for modifing employee email //////
 //////////////////////////////////////
 
 exports.employee_controller_patch_email = (req, res, next) => {
   const email = req.body.email;
   const employeeId = req.body.employeeId;
-  const token = req.body.token;
   const otpId = req.body.otpId;
   let loadedEmployee;
   OtpAuth.findById(otpId)
@@ -342,16 +311,7 @@ exports.employee_controller_patch_email = (req, res, next) => {
             loadedEmployee = result;
             verifiedEmail = false;
             res.status(200).json({
-              token: token,
-              employeeId: loadedEmployee._id,
-              name: loadedEmployee.name,
               email: loadedEmployee.email,
-              verifyEmail: loadedEmployee.verifyEmail,
-              phoneNo: loadedEmployee.phoneNo,
-              verifyPhoneNo: loadedEmployee.verifyPhoneNo,
-              balance: loadedEmployee.balance,
-              address: loadedEmployee.address,
-              gender: loadedEmployee.gender,
               message: "Email Updated Successfully ",
             });
           })
@@ -362,7 +322,7 @@ exports.employee_controller_patch_email = (req, res, next) => {
             next(err);
           });
       else {
-        res.status(404).json({ message: "Not Verified User" });
+        res.status(404).json({ message: "Not Verified employee" });
       }
     })
     .catch((err) => {
@@ -371,7 +331,7 @@ exports.employee_controller_patch_email = (req, res, next) => {
 };
 
 ///////////////////////////////////////
-///// for getting user share //////
+///// for getting employee share //////
 //////////////////////////////////////
 
 exports.employee_controller_getShare = (req, res, next) => {
@@ -383,49 +343,91 @@ exports.employee_controller_getShare = (req, res, next) => {
   Employee.aggregate([
     {
       $match: {
-        _id: mongoose.Types.ObjectId(employeeId), // Assuming you're using Mongoose
-      }
+        _id: new ObjectId(employeeId), // Assuming you're using Mongoose
+      },
     },
     {
-      $unwind: "$share" // Deconstructing the array field 'share'
+      $unwind: "$share", // Deconstructing the array field 'share'
     },
     {
       $match: {
         "share.date": date,
         "share.month": month,
-        "share.year": year
-      }
+        "share.year": year,
+      },
     },
     {
       $group: {
         _id: "$_id",
-        share: { $push: "$share" }
-      }
-    }
+        share: { $push: "$share" },
+      },
+    },
   ])
-  .then((result) => {
-    if (!result || result.length === 0) {
-      const error = new Error("Could not find Employee.");
-      error.statusCode = 404;
-      throw error;
-    }
-    res.status(200).json({ share: result[0].share });
-  })
-  .catch((err) => {
-    if (!err.statusCode) {
-      err.statusCode = 500;
-    }
-    next(err);
-  });
+    .then((result) => {
+      if (!result || result.length === 0) {
+        return res.status(200).json({ share: [] });
+      }
+      res.status(200).json({ share: result[0].share });
+    })
+    .catch((err) => {
+      if (!err.statusCode) {
+        err.statusCode = 500;
+      }
+      next(err);
+    });
 };
 
 ///////////////////////////////////////
-///// for getting user by user //////
+///// for getting employee attendence //////
+//////////////////////////////////////
+
+exports.employee_controller_getAttendence = (req, res, next) => {
+  const employeeId = req.params.employeeId;
+  const month = parseInt(req.params.month);
+  const year = parseInt(req.params.year);
+
+  Employee.aggregate([
+    {
+      $match: {
+        _id: new ObjectId(employeeId), // Assuming you're using Mongoose
+      },
+    },
+    {
+      $unwind: "$share", // Deconstructing the array field 'share'
+    },
+    {
+      $match: {
+        "share.month": month,
+        "share.year": year,
+      },
+    },
+    {
+      $group: {
+        _id: "$_id",
+        share: { $push: "$share" },
+      },
+    },
+  ])
+    .then((result) => {
+      if (!result || result.length === 0) {
+        return res.status(200).json({ attendence: [] });
+      }
+      res.status(200).json({ attendence: result[0].share });
+    })
+    .catch((err) => {
+      if (!err.statusCode) {
+        err.statusCode = 500;
+      }
+      next(err);
+    });
+};
+
+///////////////////////////////////////
+///// for getting employee by employee //////
 //////////////////////////////////////
 
 exports.employee_controller_getEmployee = (req, res, next) => {
   const employeeId = req.params.employeeId;
-  const token = req.get("Authorization").split(" ")[1];
   let loadedEmployee;
   Employee.findOne({ _id: employeeId })
 
@@ -437,16 +439,7 @@ exports.employee_controller_getEmployee = (req, res, next) => {
       }
       loadedEmployee = result;
       res.status(200).json({
-        token: token,
-        employeeId: loadedEmployee._id,
-        name: loadedEmployee.name,
-        email: loadedEmployee.email,
-        verifyEmail: loadedEmployee.verifyEmail,
-        phoneNo: loadedEmployee.phoneNo,
-        verifyPhoneNo: loadedEmployee.verifyPhoneNo,
         balance: loadedEmployee.balance,
-        gender: loadedEmployee.gender,
-        address: loadedEmployee.address,
       });
     })
     .catch((err) => {

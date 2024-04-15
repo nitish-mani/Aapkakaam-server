@@ -86,7 +86,7 @@ exports.signup = async (req, res, next) => {
       const Model = cd === "user" ? User : Vendor;
       const sharedUser = await Model.findById(sharedBy);
       if (sharedUser) {
-        const balance = sharedUser.balance + 5;
+        const balance = sharedUser.balance + 30;
         await Model.findByIdAndUpdate(sharedBy, {
           $push: {
             share: { name, phoneNo, date: new Date().toDateString() },
@@ -103,10 +103,11 @@ exports.signup = async (req, res, next) => {
             share: {
               name,
               phoneNo,
+              category: "user",
               date: new Date().getDate(),
               month: new Date().getMonth(),
               year: new Date().getFullYear(),
-              time: new Date().toLocaleTimeString(),
+              time: Date.now(),
             },
           },
           balance,
@@ -119,7 +120,6 @@ exports.signup = async (req, res, next) => {
     if (!err.statusCode) {
       err.statusCode = 500;
     }
-    console.log(err);
     next(err);
   }
 };

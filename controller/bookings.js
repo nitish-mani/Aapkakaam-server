@@ -12,7 +12,7 @@ exports.bookings_controller_postU = async (req, res, next) => {
     const vendor = await Vendor.findById(vendorId).select("balance");
     const user = await User.findById(userId).select("balance");
 
-    if (!user || user.balance < 5 || !vendor || vendor.balance < 5) {
+    if (!user || user.balance < 30 || !vendor || vendor.balance < 30) {
       return res
         .status(302)
         .json({ message: "You don't have enough balance for booking" });
@@ -34,7 +34,6 @@ exports.bookings_controller_postU = async (req, res, next) => {
     const result = await bookings.save();
     res.status(200).json({ bookingId: result._id });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -50,9 +49,9 @@ exports.bookings_controller_postV = async (req, res, next) => {
 
     if (
       !vendorUser ||
-      vendorUser.balance < 5 ||
+      vendorUser.balance < 30 ||
       !vendor ||
-      vendor.balance < 5
+      vendor.balance < 30
     ) {
       return res
         .status(302)
@@ -75,7 +74,6 @@ exports.bookings_controller_postV = async (req, res, next) => {
     const result = await bookings.save();
     res.status(200).json({ bookingId: result._id });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -90,7 +88,7 @@ exports.bookings_controller_get = async (req, res, next) => {
 
     // Calculate the total number of records to skip
     const totalRecords = await Bookings.countDocuments({ userId });
-    const skip = Math.max(0, totalRecords - (page * pageSize));
+    const skip = Math.max(0, totalRecords - page * pageSize);
 
     const orders = await Bookings.aggregate([
       {
@@ -187,7 +185,6 @@ exports.bookings_controller_get = async (req, res, next) => {
       orders: orders,
     });
   } catch (err) {
-    console.log(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -234,14 +231,14 @@ exports.bookings_controller_cancelU = async (req, res, next) => {
     // Update the vendor's balance
     const updatedVendorB = await Vendor.findByIdAndUpdate(
       vendorId,
-      { $inc: { balance: 5 } }, // Increment balance by 5
+      { $inc: { balance: 30 } }, // Increment balance by 5
       { new: true }
     );
 
     // Update the user's balance
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { $inc: { balance: 5 } }, // Increment balance by 5
+      { $inc: { balance: 30 } }, // Increment balance by 5
       { new: true }
     );
 
@@ -249,7 +246,6 @@ exports.bookings_controller_cancelU = async (req, res, next) => {
       .status(200)
       .json({ message: "Order Canceled", balance: updatedUser.balance });
   } catch (err) {
-    console.error("Error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -296,14 +292,14 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
     // Update the vendor's balance
     const updatedVendorB = await Vendor.findByIdAndUpdate(
       vendorId,
-      { $inc: { balance: 5 } }, // Increment balance by 5
+      { $inc: { balance: 30 } }, // Increment balance by 5
       { new: true }
     );
 
     // Update the vendorUser's balance
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
       userId,
-      { $inc: { balance: 5 } }, // Increment balance by 5
+      { $inc: { balance: 30 } }, // Increment balance by 5
       { new: true }
     );
 
@@ -311,7 +307,6 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
       .status(200)
       .json({ message: "Order Canceled", balance: updatedVendorUser.balance });
   } catch (err) {
-    console.error("Error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -365,7 +360,6 @@ exports.bookings_controller_completeU = async (req, res, next) => {
       .status(200)
       .json({ message: "Marked as completed successfully" });
   } catch (err) {
-    console.error("Error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -417,7 +411,6 @@ exports.bookings_controller_completeV = async (req, res, next) => {
       .status(200)
       .json({ message: "Marked as completed successfully" });
   } catch (err) {
-    console.error("Error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -486,7 +479,6 @@ exports.bookings_controller_ratingV = async (req, res, next) => {
 
     return res.status(200).json({ message: "Thanks for Rating Me..." });
   } catch (err) {
-    console.error("Error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -555,7 +547,6 @@ exports.bookings_controller_ratingU = async (req, res, next) => {
 
     return res.status(200).json({ message: "Thanks for Rating Me..." });
   } catch (err) {
-    console.error("Error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -591,7 +582,6 @@ exports.bookings_controller_ratingPermission = async (req, res, next) => {
 
     return res.status(200).json({ message: "Rating Permission granted" });
   } catch (err) {
-    console.error("Error:", err);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };

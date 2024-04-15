@@ -4,6 +4,10 @@ const jwt = require("jsonwebtoken");
 
 const OtpAuth = require("../models/otpAuth");
 const Admin = require("../models/admin");
+const User = require("../models/user");
+const Vendor = require("../models/vendor");
+const Employee = require("../models/employee");
+const Bookings = require("../models/bookings");
 
 const secretKey =
   "thisismyfirstcompanywhereweservepeopletommaketheirlifeeasy/admin";
@@ -25,9 +29,9 @@ exports.signup = async (req, res, next) => {
   const email = req.body.email;
   const phoneNo = req.body.phoneNo;
   const password = req.body.password;
-  const validEmailId=req.body.validEmailId;
-  const validPhoneNoId=req.body.validPhoneNoId;
-  
+  const validEmailId = req.body.validEmailId;
+  const validPhoneNoId = req.body.validPhoneNoId;
+
   const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const regexPass =
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
@@ -93,50 +97,74 @@ exports.signup = async (req, res, next) => {
 //// for admin login //////
 /////////////////////////////
 
-exports.login = (req, res, next) => {
-  const email = req.body.email;
-  const password = req.body.password;
-  let loadedadmin;
-  Admin.findOne({ email: email })
-    .then((admin) => {
-      if (!admin) {
-        const error = new Error("A admin with this email could not found.");
-        error.statusCode = 401;
-        throw error;
-      }
-      loadedadmin = admin;
-      return bcrypt.compare(password, admin.password);
-    })
-    .then((isEqual) => {
-      if (!isEqual) {
-        const error = new Error("Wrong password!");
-        error.statusCode = 401;
-        throw error;
-      }
-      const token = jwt.sign(
-        {
-          email: loadedadmin.email,
-          adminId: loadedadmin._id.toString(),
-        },
-        secretKey,
-        { expiresIn: "1h" }
-      );
-      res.status(200).json({
-        token: token,
-        adminId: loadedadmin._id.toString(),
-        name: loadedadmin.name,
-        email: loadedadmin.email,
-        verifyEmail: loadedadmin.verifyEmail,
-        phoneNo: loadedadmin.phoneNo,
-        verifyPhoneNo: loadedadmin.verifyPhoneNo,
-        gender: loadedadmin.gender,
-        message: "Admin logged In Successfully ",
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+exports.login = async (req, res, next) => {
+  try {
+    const email = req.body.email;
+    const password = req.body.password;
+
+    const loadedAdmin = await Admin.findOne({ email: email });
+
+    if (!loadedAdmin) {
+      const error = new Error("An admin with this email could not be found.");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const isEqual = await bcrypt.compare(password, loadedAdmin.password);
+
+    if (!isEqual) {
+      const error = new Error("Wrong password!");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const token = jwt.sign(
+      {
+        email: loadedAdmin.email,
+        adminId: loadedAdmin._id.toString(),
+      },
+      secretKey,
+      { expiresIn: "1h" }
+    );
+
+    const totalCountPromises = [
+      getTotalCount(User),
+      getTotalCount(Vendor),
+      getTotalCount(Employee),
+      getTotalCount(Bookings),
+    ];
+
+    const [totalUser, totalVendor, totalEmployee, totalBookings] =
+      await Promise.all(totalCountPromises);
+
+    res.status(200).json({
+      token: token,
+      adminId: loadedAdmin._id.toString(),
+      name: loadedAdmin.name,
+      email: loadedAdmin.email,
+      verifyEmail: loadedAdmin.verifyEmail,
+      phoneNo: loadedAdmin.phoneNo,
+      verifyPhoneNo: loadedAdmin.verifyPhoneNo,
+      gender: loadedAdmin.gender,
+      totalBookings,
+      totalEmployee,
+      totalUser,
+      totalVendor,
+      message: "Admin logged in successfully",
     });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
+
+async function getTotalCount(Model) {
+  try {
+    const count = await Model.countDocuments();
+    return count;
+  } catch (err) {
+    return 0; // Return 0 or handle the error appropriately
+  }
+}

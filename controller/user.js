@@ -55,7 +55,7 @@ exports.user_controller_verify_email = (req, res, next) => {
         sendOTP(email, otpE);
       });
     })
-    .catch((err) => console.log(err, "er"));
+    .catch((err) => res.json(err));
 };
 
 exports.user_controller_otpE = (req, res, next) => {
@@ -383,7 +383,6 @@ exports.user_controller_getShare = (req, res, next) => {
 
 exports.user_controller_getUser = (req, res, next) => {
   const userId = req.params.userId;
-  const token = req.get("Authorization").split(" ")[1];
   let loadedUser;
   User.findOne({ _id: userId })
 
@@ -395,16 +394,7 @@ exports.user_controller_getUser = (req, res, next) => {
       }
       loadedUser = result;
       res.status(200).json({
-        token: token,
-        userId: loadedUser._id,
-        name: loadedUser.name,
-        email: loadedUser.email,
-        verifyEmail: loadedUser.verifyEmail,
-        phoneNo: loadedUser.phoneNo,
-        verifyPhoneNo: loadedUser.verifyPhoneNo,
         balance: loadedUser.balance,
-        gender: loadedUser.gender,
-        address: loadedUser.address,
       });
     })
     .catch((err) => {

@@ -59,6 +59,12 @@ router.get(
 );
 
 router.get(
+  "/getAttendence/:employeeId/:month/:year",
+  is_employee,
+  employee_controller.employee_controller_getAttendence
+);
+
+router.get(
   "/getemployeeByemployee/:employeeId",
   is_employee,
   employee_controller.employee_controller_getEmployee

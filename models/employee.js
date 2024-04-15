@@ -12,8 +12,9 @@ const employeeSchema = new Schema({
   address: [],
   share: [],
   ratings: [],
+  attendence: [],
   gender: { type: String },
-  balance: { type: Number, default: 30 },
+  balance: { type: Number, default: 0 },
 });
 
 module.exports = mongoose.model("Employee", employeeSchema);

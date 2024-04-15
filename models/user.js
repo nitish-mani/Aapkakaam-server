@@ -18,7 +18,7 @@ const userSchema = new Schema({
   gender: { type: String },
   pincode: { type: String },
   accountCreatedOn: { type: String },
-  balance: { type: Number, default: 30 },
+  balance: { type: Number, default: 150 },
 });
 
 module.exports = mongoose.model("User", userSchema);
