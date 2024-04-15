@@ -21,7 +21,7 @@ app.get("/", function (req, res) {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
+const allowedOrigin =  ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader(
