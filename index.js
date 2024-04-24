@@ -15,11 +15,11 @@ const PORT = process.env.PORT;
 const app = express();
 
 app.use(express.json());
-// app.use(express.static(path.join(__dirname, "dist")));
+app.use(express.static(path.join(__dirname, "dist")));
 
-// app.get("/", function (req, res) {
-//   res.sendFile(path.join(__dirname, "dist", "index.html"));
-// });
+app.get("/", function (req, res) {
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
+});
 
 const allowedOrigin = "*" || ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
@@ -48,13 +48,13 @@ app.use((error, req, res, next) => {
   res.status(status).json({ message: message, data: data });
 });
 
-// app.use("/category", (req, res) => {
-//   res.sendFile(path.join(__dirname, "dist", "index.html"));
-// });
+app.use("/category", (req, res) => {
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
+});
 
-// app.use("/", (req, res) => {
-//   res.sendFile(path.join(__dirname, "err.html"));
-// });
+app.use("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "err.html"));
+});
 
 async function main() {
   await mongoose.connect(MONGODB_URI);
