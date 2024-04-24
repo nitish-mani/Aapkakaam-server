@@ -231,14 +231,14 @@ exports.bookings_controller_cancelU = async (req, res, next) => {
     // Update the vendor's balance
     const updatedVendorB = await Vendor.findByIdAndUpdate(
       vendorId,
-      { $inc: { balance: 30 } }, // Increment balance by 5
+      { $inc: { balance: 30 } }, // Increment balance by 30
       { new: true }
     );
 
     // Update the user's balance
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { $inc: { balance: 30 } }, // Increment balance by 5
+      { $inc: { balance: 25 } }, // Increment balance by 25
       { new: true }
     );
 
@@ -292,14 +292,14 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
     // Update the vendor's balance
     const updatedVendorB = await Vendor.findByIdAndUpdate(
       vendorId,
-      { $inc: { balance: 30 } }, // Increment balance by 5
+      { $inc: { balance: 30 } }, // Increment balance by 30
       { new: true }
     );
 
     // Update the vendorUser's balance
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
       userId,
-      { $inc: { balance: 30 } }, // Increment balance by 5
+      { $inc: { balance: 25 } }, // Increment balance by 25
       { new: true }
     );
 
