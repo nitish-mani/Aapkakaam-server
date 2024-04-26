@@ -355,26 +355,32 @@ exports.user_controller_getOrders = (req, res, next) => {
 ///// for getting user share //////
 //////////////////////////////////////
 
-exports.user_controller_getShare = (req, res, next) => {
-  const userId = req.params.userId;
-  let loadedUser;
-  User.findOne({ _id: userId })
+exports.user_controller_getShare = async (req, res, next) => {
+  try {
+    const userId = req.params.userId;
+    const skip = parseInt(req.params.skip) || 0; // Default skip to 0 if not provided
+    const limit = 12; // Default limit to 12 if not provided
 
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find User.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedUser = result;
-      res.status(200).json({ share: loadedUser.share });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+    // Retrieve user document
+    const user = await User.findOne({ _id: userId }).lean();
+
+    if (!user) {
+      const error = new Error("Could not find user.");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Reverse the share array and paginate
+    const reversedShare = user.share.slice().reverse();
+    const paginatedShare = reversedShare.slice(skip, skip + limit);
+
+    res.status(200).json({ share: paginatedShare, total: user.share.length });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////
@@ -406,7 +412,7 @@ exports.user_controller_getUser = (req, res, next) => {
 };
 
 ///////////////////////////////////////////////////////////////////////
-//// for getting user which are present in orderlist of vendor  //////
+//// for getting user which are present in orderlist of user  //////
 //////////////////////////////////////////////////////////////////////
 
 exports.user_controller_getOne = async (req, res, next) => {

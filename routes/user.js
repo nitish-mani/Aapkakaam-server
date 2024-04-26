@@ -5,7 +5,7 @@ const is_user = require("../middleware/is_user");
 const is_vendor = require("../middleware/is_vendor");
 const user_controller = require("../controller/user");
 
-const uploads=require("../controller/uploads");
+const uploads = require("../controller/uploads");
 
 const user_auth = require("../auth/user_auth");
 
@@ -25,8 +25,8 @@ router.post("/otpVerification", user_controller.user_controller_otp);
 router.post("/signup", user_auth.signup);
 router.post("/login", user_auth.login);
 
-router.put("/uploads/:category/:id",is_user, uploads.uploads);
-router.get("/getUploads/:category/:id",is_user, uploads.getUploads);
+router.put("/uploads/:category/:id", is_user, uploads.uploads);
+router.get("/getUploads/:category/:id", is_user, uploads.getUploads);
 
 router.patch("/edit/password", user_controller.user_controller_patch_password);
 
@@ -53,7 +53,7 @@ router.get(
   user_controller.user_controller_getOrders
 );
 router.get(
-  "/getShare/:userId",
+  "/getShare/:userId/:skip",
   is_user,
   user_controller.user_controller_getShare
 );
