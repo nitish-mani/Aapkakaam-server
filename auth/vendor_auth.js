@@ -38,16 +38,14 @@ exports.signup = async (req, res, next) => {
     } = req.body;
 
     const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const regexPass =
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
-
+   
     if (!regexEmail.test(email)) {
       return res.status(401).json({ message: "Invalid Email" });
     }
-    if (!regexPass.test(password)) {
+    if ((password.length<6)) {
       return res.status(401).json({
         message:
-          "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character",
+          "Password must be at least 6 characters long "
       });
     }
 
