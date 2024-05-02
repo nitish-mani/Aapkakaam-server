@@ -171,6 +171,7 @@ exports.login = (req, res, next) => {
         wageRate: loadedVendor.wageRate,
         address: loadedVendor.address,
         balance: loadedVendor.balance,
+        realBalance: loadedVendor.realBalance,
         imgURL: loadedVendor.imgURL,
         message: "Vendor logged In Successfully ",
       });

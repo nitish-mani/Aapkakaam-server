@@ -649,6 +649,7 @@ exports.vendor_controller_getVendor = (req, res, next) => {
         rating: loadedVendor.rating,
         ratingCount: loadedVendor.ratingCount,
         balance: loadedVendor.balance,
+        realBalance: loadedVendor.realBalance,
       });
     })
     .catch((err) => {

@@ -22,6 +22,7 @@ const vendorSchema = new Schema({
   pincode: { type: String },
   accountCreatedOn: { type: String },
   balance: { type: Number, default: 150 },
+  realBalance: { type: Number, default: 0 },
 });
 
 module.exports = mongoose.model("Vendor", vendorSchema);
