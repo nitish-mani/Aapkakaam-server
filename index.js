@@ -13,7 +13,7 @@ const MONGODB_URI = process.env.MONGODB_URL_1;
 const PORT = process.env.PORT;
 
 const app = express();
-
+//
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "dist")));
 
