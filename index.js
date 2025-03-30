@@ -7,6 +7,8 @@ const bookingsRoute = require("./routes/bookings");
 const shareRoute = require("./routes/share");
 const adminRoute = require("./routes/admin");
 const path = require("path");
+const { all } = require("axios");
+const { ALL } = require("dns");
 require("dotenv").config();
 
 const MONGODB_URI = process.env.MONGODB_URL_1;
@@ -23,7 +25,7 @@ app.get("/", function (req, res) {
 
 const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
     "Access-Control-Allow-Methods",
     "OPTIONS, GET, POST, PUT, PATCH, DELETE"

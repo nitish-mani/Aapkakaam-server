@@ -37,15 +37,9 @@ exports.signup = async (req, res, next) => {
       validEmailId,
     } = req.body;
 
-    const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-   
-    if (!regexEmail.test(email)) {
-      return res.status(401).json({ message: "Invalid Email" });
-    }
-    if ((password.length<6)) {
+    if (password.length < 6) {
       return res.status(401).json({
-        message:
-          "Password must be at least 6 characters long "
+        message: "Password must be at least 6 characters long ",
       });
     }
 
@@ -59,9 +53,9 @@ exports.signup = async (req, res, next) => {
     if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
       return res.status(401).json({ message: "Number not verified" });
     }
-
-    if (!checkEmailValid || !checkEmailValid.verifiedEmail) {
-      return res.status(401).json({ message: "Email not verified" });
+    const vendorExists = await Vendor.findOne({ phoneNo: phoneNo });
+    if (vendorExists) {
+      return res.status(401).json({ message: "Mobile Number already exists!" });
     }
 
     const hashedPw = await bcrypt.hash(password, 12);
@@ -126,14 +120,14 @@ exports.signup = async (req, res, next) => {
 /////////////////////////////
 
 exports.login = (req, res, next) => {
-  const email = req.body.email;
+  const phoneNo = req.body.phoneNo;
   const password = req.body.password;
   let loadedVendor;
 
-  Vendor.findOne({ email: email })
+  Vendor.findOne({ phoneNo: phoneNo })
     .then((vendor) => {
       if (!vendor) {
-        const error = new Error("A vendor with this email could not found.");
+        const error = new Error("A vendor with this phoneNo could not found.");
         error.statusCode = 401;
         throw error;
       }
@@ -148,7 +142,7 @@ exports.login = (req, res, next) => {
       }
       const token = jwt.sign(
         {
-          email: loadedVendor.email,
+          phoneNo: loadedVendor.phoneNo,
           vendorId: loadedVendor._id.toString(),
         },
         secretKey,

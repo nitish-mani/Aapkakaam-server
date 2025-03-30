@@ -6,7 +6,7 @@ const userSchema = new Schema({
   phoneNo: { type: Number, required: true },
   otpForPhoneNo: Number,
   verifyPhoneNo: { type: Boolean, default: false },
-  email: { type: String, required: true },
+  email: { type: String, default: "" },
   otpForEmail: Number,
   verifyEmail: { type: Boolean, default: false },
   password: { type: String, required: true },

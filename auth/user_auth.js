@@ -35,18 +35,14 @@ exports.signup = async (req, res, next) => {
       validPhoneNoId,
       validEmailId,
     } = req.body;
-    const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!regexEmail.test(email)) {
-      return res.status(401).json({ message: "Invalid Email" });
-    }
     if (password.length < 6) {
       return res.status(401).json({
         message: "Password must be at least 6 characters long ",
       });
     }
 
-    const [checkPhoneNoValid, checkEmailValid] = await Promise.all([
+    const [checkPhoneNoValid] = await Promise.all([
       OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
       OtpAuth.findById(validEmailId).select("verifiedEmail"),
     ]);
@@ -57,13 +53,9 @@ exports.signup = async (req, res, next) => {
       return res.status(401).json({ message: "Number not verified" });
     }
 
-    if (!checkEmailValid || !checkEmailValid.verifiedEmail) {
-      return res.status(401).json({ message: "Email not verified" });
-    }
-
-    const userExists = await User.findOne({ email: email });
+    const userExists = await User.findOne({ phoneNo: phoneNo });
     if (userExists) {
-      return res.status(401).json({ message: "Email already exists!" });
+      return res.status(401).json({ message: "Mobile Number already exists!" });
     }
 
     const hashedPw = await bcrypt.hash(password, 12);
@@ -126,13 +118,13 @@ exports.signup = async (req, res, next) => {
 //////////////////////////
 
 exports.login = (req, res, next) => {
-  const email = req.body.email;
+  const phoneNo = req.body.phoneNo;
   const password = req.body.password;
   let loadedUser;
-  User.findOne({ email: email })
+  User.findOne({ phoneNo: phoneNo })
     .then((user) => {
       if (!user) {
-        const error = new Error("A user with this email could not found.");
+        const error = new Error("A user with this phoneNo could not found.");
         error.statusCode = 401;
         throw error;
       }
@@ -147,7 +139,7 @@ exports.login = (req, res, next) => {
       }
       const token = jwt.sign(
         {
-          email: loadedUser.email,
+          phoneNo: loadedUser.phoneNo,
           userId: loadedUser._id.toString(),
         },
         secretKey,

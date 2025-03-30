@@ -5,7 +5,7 @@ const vendorSchema = new Schema({
   name: { type: String, required: true },
   phoneNo: { type: Number, required: true },
   verifyPhoneNo: { type: Boolean, default: false },
-  email: { type: String, required: true },
+  email: { type: String, default: "" },
   verifyEmail: { type: Boolean, default: false },
   password: { type: String, required: true },
   type: { type: String, required: true },
