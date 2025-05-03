@@ -11,18 +11,19 @@ const vendorSchema = new Schema({
   type: { type: String, required: true },
   validPhoneNoId: { type: String },
   validEmailId: { type: String },
-  imgURL: String,
+  imgURL: { type: String },
   address: [],
   bookings: [],
   share: [],
   wageRate: Number,
-  rating: Number,
-  ratingCount: Number,
+  rating: { type: Number, default: 4 },
+  ratingCount: { type: Number, default: 1 },
   gender: { type: String },
   pincode: { type: String },
   accountCreatedOn: { type: String },
+  bonusAmount: { type: Number, default: 150 },
   balance: { type: Number, default: 150 },
-  realBalance: { type: Number, default: 0 },
+  fcmToken: { type: String },
 });
 
 module.exports = mongoose.model("Vendor", vendorSchema);

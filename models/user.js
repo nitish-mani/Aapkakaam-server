@@ -18,7 +18,9 @@ const userSchema = new Schema({
   gender: { type: String },
   pincode: { type: String },
   accountCreatedOn: { type: String },
-  balance: { type: Number, default: 150 },
+  bonusAmount: { type: Number, default: 150 },
+  balance: { type: Number, default: 0 },
+  fcmToken: { type: String },
 });
 
 module.exports = mongoose.model("User", userSchema);

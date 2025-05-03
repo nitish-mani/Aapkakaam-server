@@ -32,6 +32,7 @@ exports.signup = async (req, res, next) => {
       gender,
       sharedBy,
       cd,
+      fcmToken,
       validPhoneNoId,
       validEmailId,
     } = req.body;
@@ -42,16 +43,16 @@ exports.signup = async (req, res, next) => {
       });
     }
 
-    const [checkPhoneNoValid] = await Promise.all([
-      OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
-      OtpAuth.findById(validEmailId).select("verifiedEmail"),
-    ]);
-    const verifiedEmail = checkEmailValid?.verifiedEmail;
-    const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
+    // const [checkPhoneNoValid] = await Promise.all([
+    //   OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
+    //   OtpAuth.findById(validEmailId).select("verifiedEmail"),
+    // ]);
+    // const verifiedEmail = checkEmailValid?.verifiedEmail;
+    // const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
 
-    if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
-      return res.status(401).json({ message: "Number not verified" });
-    }
+    // if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
+    //   return res.status(401).json({ message: "Number not verified" });
+    // }
 
     const userExists = await User.findOne({ phoneNo: phoneNo });
     if (userExists) {
@@ -65,8 +66,9 @@ exports.signup = async (req, res, next) => {
       email,
       password: hashedPw,
       gender,
-      verifyPhoneNo: verifiedNumber,
-      verifyEmail: verifiedEmail,
+      // fcmToken: fcmToken,
+      // verifyPhoneNo: verifiedNumber,
+      // verifyEmail: verifiedEmail,
       accountCreatedOn: new Date().toDateString(),
     });
 
@@ -75,12 +77,12 @@ exports.signup = async (req, res, next) => {
       const Model = cd === "user" ? User : Vendor;
       const sharedUser = await Model.findById(sharedBy);
       if (sharedUser) {
-        const balance = sharedUser.balance + 30;
+        const balance = sharedUser.bonusAmount + 30;
         await Model.findByIdAndUpdate(sharedBy, {
           $push: {
             share: { name, phoneNo, date: new Date().toDateString() },
           },
-          balance,
+          bonusAmount,
         });
       }
     } else if (cd == "employee") {
@@ -104,7 +106,7 @@ exports.signup = async (req, res, next) => {
       }
     }
 
-    res.status(201).json({ message: "User created!", userId: result._id });
+    res.status(200).json({ message: "User created!", userId: result._id });
   } catch (err) {
     if (!err.statusCode) {
       err.statusCode = 500;
@@ -137,6 +139,7 @@ exports.login = (req, res, next) => {
         error.statusCode = 401;
         throw error;
       }
+
       const token = jwt.sign(
         {
           phoneNo: loadedUser.phoneNo,
@@ -145,6 +148,9 @@ exports.login = (req, res, next) => {
         secretKey,
         { expiresIn: "72h" }
       );
+      User.findByIdAndUpdate(loadedUser._id, {
+        fcmToken: req.body.fcmToken,
+      });
       res.status(200).json({
         token: token,
         userId: loadedUser._id,
@@ -153,6 +159,7 @@ exports.login = (req, res, next) => {
         verifyEmail: loadedUser.verifyEmail,
         phoneNo: loadedUser.phoneNo,
         verifyPhoneNo: loadedUser.verifyPhoneNo,
+        bonusAmount: loadedUser.bonusAmount,
         balance: loadedUser.balance,
         address: loadedUser.address,
         gender: loadedUser.gender,

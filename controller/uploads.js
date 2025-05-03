@@ -17,15 +17,15 @@ const s3Client = new S3Client({
   },
 });
 
-async function getObject(key) {
-  const command = new GetObjectCommand({
-    Bucket: "aapkakaam",
-    Key: key,
-  });
+// async function getObject(key) {
+//   const command = new GetObjectCommand({
+//     Bucket: "aapkakaam",
+//     Key: key,
+//   });
 
-  const url = await getSignedUrl(s3Client, command, { expiresIn: 600000 });
-  return url;
-}
+//   const url = await getSignedUrl(s3Client, command);
+//   return url;
+// }
 
 async function putObject(fileName, contentType, category) {
   const command = new PutObjectCommand({
@@ -34,7 +34,7 @@ async function putObject(fileName, contentType, category) {
     ContentType: contentType,
   });
 
-  const url = await getSignedUrl(s3Client, command);
+  const url = await getSignedUrl(s3Client, command, { expiresIn: 600 });
   return url;
 }
 
@@ -51,7 +51,7 @@ exports.getUploads = async (req, res, next) => {
   const category = req.params.category;
   const id = req.params.id;
 
-  const url = await getObject(`uploads/${category}/img${id}.jpeg`);
+  const url = `https://aapkakaam.s3.ap-south-1.amazonaws.com/uploads/${category}/img${id}.jpeg`;
 
   if (category == "user") {
     User.findByIdAndUpdate(id, { imgURL: url }, { new: true }).then((resu) => {
