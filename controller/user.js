@@ -100,14 +100,18 @@ exports.user_controller_verify_phoneNo = (req, res, next) => {
           .get(
             `${process.env.FAST2SMS}&route=otp&variables_values=${otpM}&flash=0&numbers=${phoneNo}`
           )
-          .then((succ) =>
-            res.status(200).json({
+          .then((succ) => {
+            
+            console.log("succ", succ);
+            return res.status(200).json({
               message: "OTP sent successfully",
               verified: true,
               otpId: result._id,
-            })
-          )
-          .catch((err) => res.send(err.response.data));
+            });
+          })
+          .catch((err) => {console.log(err);
+           return res.send(err.response.data);
+          });
       });
     })
     .catch((err) => res.send(err.response.data));
@@ -401,6 +405,7 @@ exports.user_controller_getUser = (req, res, next) => {
       loadedUser = result;
       res.status(200).json({
         balance: loadedUser.balance,
+        bonusAmount: loadedUser.bonusAmount,
       });
     })
     .catch((err) => {

@@ -35,6 +35,7 @@ exports.signup = async (req, res, next) => {
       cd,
       validPhoneNoId,
       validEmailId,
+      fcmToken,
     } = req.body;
 
     if (password.length < 6) {
@@ -43,16 +44,17 @@ exports.signup = async (req, res, next) => {
       });
     }
 
-    const [checkPhoneNoValid, checkEmailValid] = await Promise.all([
-      OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
-      OtpAuth.findById(validEmailId).select("verifiedEmail"),
-    ]);
-    const verifiedEmail = checkEmailValid?.verifiedEmail;
-    const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
+    // const [checkPhoneNoValid, checkEmailValid] = await Promise.all([
+    //   OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
+    //   OtpAuth.findById(validEmailId).select("verifiedEmail"),
+    // ]);
+    // const verifiedEmail = checkEmailValid?.verifiedEmail;
+    // const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
 
-    if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
-      return res.status(401).json({ message: "Number not verified" });
-    }
+    // if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
+    //   return res.status(401).json({ message: "Number not verified" });
+    // }
+
     const vendorExists = await Vendor.findOne({ phoneNo: phoneNo });
     if (vendorExists) {
       return res.status(401).json({ message: "Mobile Number already exists!" });
@@ -66,9 +68,9 @@ exports.signup = async (req, res, next) => {
       password: hashedPw,
       type: type,
       gender: gender,
-      rating: 0,
-      verifyPhoneNo: verifiedNumber,
-      verifyEmail: verifiedEmail,
+      // fcmToken: fcmToken,
+      // verifyPhoneNo: verifiedNumber,
+      // verifyEmail: verifiedEmail,
       accountCreatedOn: new Date().toDateString(),
     });
     const result = await vendor.save();
@@ -77,12 +79,12 @@ exports.signup = async (req, res, next) => {
       const Model = cd === "user" ? User : Vendor;
       const sharedUser = await Model.findById(sharedBy);
       if (sharedUser) {
-        let balance = sharedUser.balance + 30;
+        let balance = sharedUser.bonusAmount + 30;
         await Model.findByIdAndUpdate(sharedBy, {
           $push: {
             share: { name, phoneNo, date: new Date().toDateString() },
           },
-          balance,
+          bonusAmount,
         });
       }
     } else if (cd == "employee") {
@@ -106,7 +108,7 @@ exports.signup = async (req, res, next) => {
       }
     }
 
-    res.status(201).json({ message: "Vendor created!", vendorId: result._id });
+    res.status(200).json({ message: "Vendor created!", vendorId: result._id });
   } catch (err) {
     if (!err.statusCode) {
       err.statusCode = 500;
@@ -122,6 +124,7 @@ exports.signup = async (req, res, next) => {
 exports.login = (req, res, next) => {
   const phoneNo = req.body.phoneNo;
   const password = req.body.password;
+  console.log(req.body.fcmToken);
   let loadedVendor;
 
   Vendor.findOne({ phoneNo: phoneNo })
@@ -148,6 +151,18 @@ exports.login = (req, res, next) => {
         secretKey,
         { expiresIn: "72h" }
       );
+      Vendor.findByIdAndUpdate(
+        loadedVendor._id,
+        { $set: { fcmToken: req.body.fcmToken } },
+        { new: true }
+      )
+        .then((updatedVendor) => {
+          console.log("Updated Vendor:", updatedVendor);
+        })
+        .catch((err) => {
+          console.error("Error updating vendor:", err);
+        });
+
       res.status(200).json({
         token: token,
         vendorId: loadedVendor._id,
@@ -163,7 +178,7 @@ exports.login = (req, res, next) => {
         wageRate: loadedVendor.wageRate,
         address: loadedVendor.address,
         balance: loadedVendor.balance,
-        realBalance: loadedVendor.realBalance,
+        bonusAmount: loadedVendor.bonusAmount,
         imgURL: loadedVendor.imgURL,
         message: "Vendor logged In Successfully ",
       });

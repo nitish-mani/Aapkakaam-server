@@ -5,6 +5,7 @@ const Bookings = require("../models/bookings");
 const OtpAuth = require("../models/otpAuth");
 const bcrypt = require("bcryptjs");
 const { ObjectId } = require("mongodb");
+const { sendNotification } = require("./singalMessaging");
 
 const nodemailer = require("nodemailer");
 const { default: axios } = require("axios");
@@ -444,14 +445,15 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
       date,
       month,
       year,
+      isSelfBooking,
     } = req.body;
-
     const vendorId = req.params.vendorId;
     const bookingTime = Date.now();
     const bookingCost = 30;
-
-    const vendor = await Vendor.findById(vendorId).select("balance");
-    const vendorUserDoc = await Vendor.findById(vendorUser).select("balance");
+    const vendor = await Vendor.findById(vendorId).select("balance fcmToken");
+    const vendorUserDoc = await Vendor.findById(vendorUser).select(
+      "bonusAmount"
+    );
 
     if (!vendor || !vendorUserDoc) {
       return res
@@ -459,8 +461,14 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
         .json({ message: "Vendor or vendor user not found." });
     }
 
-    if (vendor.balance < bookingCost || vendorUserDoc.balance < bookingCost) {
-      return res.status(400).json({ message: "Insufficient balance." });
+    if (isSelfBooking) {
+    } else {
+      if (
+        vendor.balance < bookingCost ||
+        vendorUserDoc.bonusAmount < bookingCost
+      ) {
+        return res.status(400).json({ message: "Insufficient balance." });
+      }
     }
 
     const updatedVendor = await Vendor.findByIdAndUpdate(
@@ -482,20 +490,36 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
             rating: 0,
           },
         },
-        $inc: { balance: -bookingCost },
+        $inc: { balance: isSelfBooking ? 0 : -bookingCost },
       },
       { new: true }
     );
 
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
       vendorUser,
-      { $inc: { balance: -bookingCost } },
+      { $inc: { bonusAmount: isSelfBooking ? 0 : -bookingCost } },
       { new: true }
     );
+    try {
+      sendNotification(
+        vendor.fcmToken,
+        `...You are Booked...`,
+        bookingId,
+        `Booking Done by ${name.toUpperCase()} on { ${date}/${
+          month + 1
+        }/${year} }`,
+        "booking",
+        month.toString(),
+        year.toString()
+      );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
-    res
-      .status(200)
-      .json({ message: "Booking Done..!", balance: updatedVendorUser.balance });
+    res.status(200).json({
+      message: "Booking Done..!",
+      bonusAmount: updatedVendorUser.bonusAmount,
+    });
   } catch (err) {
     res.status(500).json({ message: "Internal Server Error" });
   }
@@ -525,14 +549,14 @@ exports.vendor_controller_bookNowU = async (req, res, next) => {
     const bookingTime = Date.now();
     const bookingCost = 30;
 
-    const vendor = await Vendor.findById(vendorId).select("balance");
-    const user = await User.findById(userId).select("balance");
+    const vendor = await Vendor.findById(vendorId).select("balance fcmToken");
+    const user = await User.findById(userId).select("bonusAmount");
 
     if (!vendor || !user) {
       return res.status(404).json({ message: "Vendor or user not found." });
     }
 
-    if (vendor.balance < bookingCost || user.balance < bookingCost) {
+    if (vendor.balance < bookingCost || user.bonusAmount < bookingCost) {
       return res.status(400).json({ message: "Insufficient balance." });
     }
 
@@ -562,14 +586,32 @@ exports.vendor_controller_bookNowU = async (req, res, next) => {
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { $inc: { balance: -bookingCost } },
+      { $inc: { bonusAmount: -bookingCost } },
       { new: true }
     );
+    // Send notification
+    try {
+      sendNotification(
+        vendor.fcmToken,
+        `...You are Booked...`,
+        bookingId,
+        `Booking Done by ${name.toUpperCase()} on { ${date}/${
+          month + 1
+        }/${year} }`,
+        "booking",
+        month.toString(),
+        year.toString()
+      );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
-    res
-      .status(200)
-      .json({ message: "Booking Done..!", balance: updatedUser.balance });
+    res.status(200).json({
+      message: "Booking Done..!",
+      bonusAmount: updatedUser.bonusAmount,
+    });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -584,6 +626,7 @@ exports.vendor_controller_getBookings = async (req, res, next) => {
     const year = parseInt(req.params.year); // Filter by year
     const month = parseInt(req.params.month); // Filter by month
 
+    // console.log(vendorId, year, month);
     let pipeline = [
       {
         $match: {
@@ -613,7 +656,7 @@ exports.vendor_controller_getBookings = async (req, res, next) => {
       },
     ];
 
-    const vendor = await Vendor.aggregate(pipeline);
+    const vendor = (await Vendor.aggregate(pipeline)).reverse();
 
     if (!vendor || vendor.length === 0) {
       return res.status(200).json({
@@ -622,6 +665,7 @@ exports.vendor_controller_getBookings = async (req, res, next) => {
           "Could not find Vendor bookings for the specified month and year.",
       });
     }
+    // console.log(vendor);
 
     res.status(200).json(vendor);
   } catch (err) {
@@ -649,7 +693,7 @@ exports.vendor_controller_getVendor = (req, res, next) => {
         rating: loadedVendor.rating,
         ratingCount: loadedVendor.ratingCount,
         balance: loadedVendor.balance,
-        realBalance: loadedVendor.realBalance,
+        bonusAmount: loadedVendor.bonusAmount,
       });
     })
     .catch((err) => {
@@ -668,98 +712,93 @@ exports.vendor_controller_getAll = async (req, res, next) => {
   try {
     const type = req.params.type;
     const pincode = req.params.pincode;
-    const bookingDate = req.params.bookingDate;
-    const limit = 12; // Default limit to 12 if not provided
-    const page = parseInt(req.params.page) || 1; // Default page to 1 if not provided
-    const minRating = parseFloat(req.params.minRating) || 0; // Default minRating to 0 if not provided
-    const minWageRate = parseFloat(req.params.minWageRate) || 0; // Default minWageRate to 0 if not provided
+    const bookingDate = new Date(req.params.bookingDate).toDateString();
+    const limit = 12;
+    const page = parseInt(req.params.page) || 1;
+    const minRating = parseFloat(req.params.minRating) || 0;
+    const minWageRate = parseFloat(req.params.minWageRate) || 0;
 
-    const vendorList = await Bookings.distinct("vendorId", {
-      type: type,
-      pincode: pincode,
-      bookingDate: bookingDate,
+    // 1. Get vendorIds with confirmed bookings (not cancelled)
+    const bookedVendorIds = await Bookings.distinct("vendorId", {
+      type,
+      pincode,
+      bookingDate,
       cancelOrder: { $ne: true },
     });
+    // 2. Build dynamic matchStage
+    const matchStage = {
+      type,
+      pincode,
+      balance: { $gte: 25 },
+      wageRate: { $exists: true, $gte: minWageRate },
+      rating: { $gte: minRating },
+    };
 
-    const totalVendorsCount = await Vendor.aggregate([
-      {
-        $match: {
-          type: type,
-          pincode: pincode,
-          _id: { $nin: vendorList },
-          balance: { $gt: 25 },
-          wageRate: { $exists: true },
-          rating: { $gte: minRating }, // Filter by minimum rating
-          wageRate: { $gte: minWageRate }, // Filter by minimum wageRate
-        },
-      },
-      {
-        $count: "count",
-      },
-    ]);
+    // Only exclude booked vendorIds if any exist
+    if (bookedVendorIds.length > 0) {
+      matchStage._id = { $nin: bookedVendorIds };
+    }
 
     const skip = (page - 1) * limit;
-    const vendors = await Vendor.aggregate([
-      {
-        $match: {
-          type: type,
-          pincode: pincode,
-          _id: { $nin: vendorList },
-          balance: { $gt: 25 },
-          wageRate: { $exists: true },
-          rating: { $gte: minRating }, // Filter by minimum rating
-          wageRate: { $gte: minWageRate }, // Filter by minimum wageRate
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          type: 1,
-          gender: 1,
-          phoneNo: {
-            $toString: "$phoneNo", // Convert phoneNo to string
+
+    const [vendors, totalCount] = await Promise.all([
+      Vendor.aggregate([
+        { $match: matchStage },
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            type: 1,
+            gender: 1,
+            phoneNo: {
+              $toString: "$phoneNo",
+            },
+            rating: 1,
+            ratingCount: 1,
+            wageRate: 1,
+            profilePic: 1,
           },
-          rating: 1,
-          ratingCount: 1,
-          wageRate: 1,
-          profilePic: 1,
         },
-      },
-      {
-        $project: {
-          _id: 1,
-          name: 1,
-          type: 1,
-          gender: 1,
-          phoneNo: {
-            $let: {
-              vars: {
-                len: { $strLenBytes: "$phoneNo" },
-              },
-              in: {
-                $concat: [
-                  { $substrBytes: ["$phoneNo", 0, 2] },
-                  "******",
-                  {
-                    $substrBytes: ["$phoneNo", { $subtract: ["$$len", 2] }, 2],
-                  },
-                ],
+        {
+          $project: {
+            _id: 1,
+            name: 1,
+            type: 1,
+            gender: 1,
+            phoneNo: {
+              $let: {
+                vars: {
+                  len: { $strLenBytes: "$phoneNo" },
+                },
+                in: {
+                  $concat: [
+                    { $substrBytes: ["$phoneNo", 0, 2] },
+                    "******",
+                    {
+                      $substrBytes: [
+                        "$phoneNo",
+                        { $subtract: ["$$len", 2] },
+                        2,
+                      ],
+                    },
+                  ],
+                },
               },
             },
+            rating: 1,
+            ratingCount: 1,
+            wageRate: 1,
+            profilePic: 1,
           },
-          rating: 1,
-          ratingCount: 1,
-          wageRate: 1,
-          profilePic: 1,
         },
-      },
-      { $skip: skip }, // Skip records based on page and limit
-      { $limit: limit }, // Limit the number of records
-    ]);
+        { $skip: skip },
+        { $limit: limit },
+      ]),
 
+      Vendor.countDocuments(matchStage),
+    ]);
     res.status(200).json({
-      total: totalVendorsCount.length > 0 ? totalVendorsCount[0].count : 0,
+      total: totalCount,
       vendors,
     });
   } catch (err) {

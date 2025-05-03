@@ -2,17 +2,19 @@ const Bookings = require("../models/bookings");
 const Vendor = require("../models/vendor");
 const User = require("../models/user");
 const { ObjectId } = require("mongodb");
+const { sendNotification } = require("./singalMessaging");
 
 exports.bookings_controller_postU = async (req, res, next) => {
   try {
     const { userId, vendorId, bookingDate, type, pincode } = req.body;
+    const formattedBookingDate = new Date(bookingDate).toDateString();
     const bookedOn = new Date().toDateString();
     const bookingTime = Date.now();
 
     const vendor = await Vendor.findById(vendorId).select("balance");
-    const user = await User.findById(userId).select("balance");
+    const user = await User.findById(userId).select("bonusAmount");
 
-    if (!user || user.balance < 30 || !vendor || vendor.balance < 30) {
+    if (!user || user.bonusAmount < 30 || !vendor || vendor.balance < 30) {
       return res
         .status(302)
         .json({ message: "You don't have enough balance for booking" });
@@ -21,7 +23,7 @@ exports.bookings_controller_postU = async (req, res, next) => {
     const bookings = new Bookings({
       userId,
       vendorId,
-      bookingDate,
+      bookingDate: formattedBookingDate,
       type,
       pincode,
       bookedOn,
@@ -40,16 +42,36 @@ exports.bookings_controller_postU = async (req, res, next) => {
 
 exports.bookings_controller_postV = async (req, res, next) => {
   try {
-    const { userId, vendorId, bookingDate, type, pincode } = req.body;
+    const { userId, vendorId, bookingDate, type, pincode, isSelfBooking } =
+      req.body;
+    const formattedBookingDate = new Date(bookingDate).toDateString();
     const bookedOn = new Date().toDateString();
     const bookingTime = Date.now();
 
     const vendor = await Vendor.findById(vendorId).select("balance");
-    const vendorUser = await Vendor.findById(userId).select("balance");
+    const vendorUser = await Vendor.findById(userId).select("bonusAmount");
+
+    if (isSelfBooking) {
+      const bookings = new Bookings({
+        userId,
+        vendorId,
+        bookingDate: formattedBookingDate,
+        type,
+        pincode,
+        bookedOn,
+        cancelOrder: false,
+        orderCompleted: false,
+        rating: 0,
+        bookingTime,
+      });
+
+      const result = await bookings.save();
+      return res.status(200).json({ bookingId: result._id });
+    }
 
     if (
       !vendorUser ||
-      vendorUser.balance < 30 ||
+      vendorUser.bonusAmount < 30 ||
       !vendor ||
       vendor.balance < 30
     ) {
@@ -61,7 +83,7 @@ exports.bookings_controller_postV = async (req, res, next) => {
     const bookings = new Bookings({
       userId,
       vendorId,
-      bookingDate,
+      bookingDate: formattedBookingDate,
       type,
       pincode,
       bookedOn,
@@ -74,6 +96,7 @@ exports.bookings_controller_postV = async (req, res, next) => {
     const result = await bookings.save();
     res.status(200).json({ bookingId: result._id });
   } catch (err) {
+    // Log the error for debugging
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -200,8 +223,11 @@ exports.bookings_controller_cancelU = async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
-
-    const { orderCompleted, vendorId, userId } = booking;
+    const { orderCompleted, vendorId, userId, bookingDate } = booking;
+    const result = new Date(bookingDate);
+    const date = result.getDate().toString(); // Day of month (1-31)
+    const month = (result.getMonth() + 1).toString(); // Month (1-12)
+    const year = result.getFullYear().toString();
 
     if (orderCompleted) {
       return res.status(301).json({
@@ -229,22 +255,36 @@ exports.bookings_controller_cancelU = async (req, res, next) => {
     );
 
     // Update the vendor's balance
-    const updatedVendorB = await Vendor.findByIdAndUpdate(
-      vendorId,
-      { $inc: { balance: 30 } }, // Increment balance by 30
-      { new: true }
-    );
+    // const updatedVendorB = await Vendor.findByIdAndUpdate(
+    //   vendorId,
+    //   { $inc: { balance: 30 } }, // Increment balance by 30
+    //   { new: true }
+    // );
 
     // Update the user's balance
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { $inc: { balance: 25 } }, // Increment balance by 25
+      { $inc: { bonusAmount: 25 } }, // Increment balance by 25
       { new: true }
     );
+    try {
+      sendNotification(
+        updatedVendor.fcmToken,
+        `...You are Canceled...`,
+        bookingId,
+        `Canceled by ${updatedUser.name.toUpperCase()} for { ${date}/${month}/${year} }`,
+        "cancelled",
+        month,
+        year
+      );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
-    return res
-      .status(200)
-      .json({ message: "Order Canceled", balance: updatedUser.balance });
+    return res.status(200).json({
+      message: "Order Canceled",
+      bonusAmount: updatedUser.bonusAmount,
+    });
   } catch (err) {
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -262,8 +302,11 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const { orderCompleted, vendorId, userId } = booking;
-
+    const { orderCompleted, vendorId, userId, bookingDate } = booking;
+    const result = new Date(bookingDate);
+    const date = result.getDate().toString(); // Day of month (1-31)
+    const month = (result.getMonth() + 1).toString(); // Month (1-12)
+    const year = result.getFullYear().toString();
     if (orderCompleted) {
       return res.status(301).json({
         message: "You can't cancel this order. This is already completed",
@@ -290,18 +333,31 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
     );
 
     // Update the vendor's balance
-    const updatedVendorB = await Vendor.findByIdAndUpdate(
-      vendorId,
-      { $inc: { balance: 30 } }, // Increment balance by 30
-      { new: true }
-    );
+    // const updatedVendorB = await Vendor.findByIdAndUpdate(
+    //   vendorId,
+    //   { $inc: { balance: 30 } }, // Increment balance by 30
+    //   { new: true }
+    // );
 
     // Update the vendorUser's balance
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
       userId,
-      { $inc: { balance: 25 } }, // Increment balance by 25
+      { $inc: { bonusAmount: 25 } }, // Increment balance by 25
       { new: true }
     );
+    try {
+      sendNotification(
+        updatedVendor.fcmToken,
+        `...You are Canceled...`,
+        bookingId,
+        `Canceled by ${updatedVendorUser.name.toUpperCase()} for { ${date}/${month}/${year} }`,
+        "cancelled",
+        month,
+        year
+      );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
     return res
       .status(200)
@@ -580,7 +636,9 @@ exports.bookings_controller_ratingPermission = async (req, res, next) => {
       return res.status(500).json({ message: "Failed to update booking" });
     }
 
-    return res.status(200).json({ message: "Rating Permission granted" });
+    return res
+      .status(200)
+      .json({ message: "Rating Permission granted", isPermissonGranted: true });
   } catch (err) {
     return res.status(500).json({ message: "Internal Server Error" });
   }
