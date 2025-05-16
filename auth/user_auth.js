@@ -43,16 +43,16 @@ exports.signup = async (req, res, next) => {
       });
     }
 
-    // const [checkPhoneNoValid] = await Promise.all([
-    //   OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
-    //   OtpAuth.findById(validEmailId).select("verifiedEmail"),
-    // ]);
+    const [checkPhoneNoValid] = await Promise.all([
+      OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
+      // OtpAuth.findById(validEmailId).select("verifiedEmail"),
+    ]);
     // const verifiedEmail = checkEmailValid?.verifiedEmail;
-    // const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
+    const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
 
-    // if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
-    //   return res.status(401).json({ message: "Number not verified" });
-    // }
+    if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
+      return res.status(401).json({ message: "Number not verified" });
+    }
 
     const userExists = await User.findOne({ phoneNo: phoneNo });
     if (userExists) {
@@ -66,8 +66,8 @@ exports.signup = async (req, res, next) => {
       email,
       password: hashedPw,
       gender,
-      // fcmToken: fcmToken,
-      // verifyPhoneNo: verifiedNumber,
+      fcmToken: fcmToken,
+      verifyPhoneNo: verifiedNumber,
       // verifyEmail: verifiedEmail,
       accountCreatedOn: new Date().toDateString(),
     });
@@ -77,7 +77,7 @@ exports.signup = async (req, res, next) => {
       const Model = cd === "user" ? User : Vendor;
       const sharedUser = await Model.findById(sharedBy);
       if (sharedUser) {
-        const balance = sharedUser.bonusAmount + 30;
+        const bonusAmount = sharedUser.bonusAmount + 30;
         await Model.findByIdAndUpdate(sharedBy, {
           $push: {
             share: { name, phoneNo, date: new Date().toDateString() },

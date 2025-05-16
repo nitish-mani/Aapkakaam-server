@@ -47,6 +47,12 @@ router.patch(
   is_vendor,
   vendor_controller.vendor_controller_patch_name
 );
+
+router.patch(
+  "/edit/fcmToken",
+  is_vendor,
+  vendor_controller.vendor_controller_patch_fcmToken
+);
 router.patch(
   "/edit/phoneNo",
   is_vendor,

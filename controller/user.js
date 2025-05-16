@@ -101,7 +101,6 @@ exports.user_controller_verify_phoneNo = (req, res, next) => {
             `${process.env.FAST2SMS}&route=otp&variables_values=${otpM}&flash=0&numbers=${phoneNo}`
           )
           .then((succ) => {
-            
             console.log("succ", succ);
             return res.status(200).json({
               message: "OTP sent successfully",
@@ -109,8 +108,9 @@ exports.user_controller_verify_phoneNo = (req, res, next) => {
               otpId: result._id,
             });
           })
-          .catch((err) => {console.log(err);
-           return res.send(err.response.data);
+          .catch((err) => {
+            console.log(err);
+            return res.send(err.response.data);
           });
       });
     })
@@ -232,6 +232,35 @@ exports.user_controller_patch_name = (req, res, next) => {
       res.status(200).json({
         name: loadedUser.name,
         message: "Name Updated Successfully ",
+      });
+    })
+    .catch((err) => {
+      if (!err.statusCode) {
+        err.statusCode = 500;
+      }
+      next(err);
+    });
+};
+
+///////////////////////////////////////
+///// for modifing user fcm token //////
+//////////////////////////////////////
+
+exports.user_controller_patch_fcmToken = (req, res, next) => {
+  const fcmToken = req.body.fcmToken;
+  const userId = req.body.userId;
+  let loadedUser;
+  User.findByIdAndUpdate(userId, { fcmToken }, { returnDocument: "after" })
+    .then((result) => {
+      if (!result) {
+        const error = new Error("Could not find User.");
+        error.statusCode = 404;
+        throw error;
+      }
+      loadedUser = result;
+      res.status(200).json({
+        fcmToken: loadedUser.fcmToken,
+        message: "token Updated Successfully ",
       });
     })
     .catch((err) => {

@@ -44,16 +44,16 @@ exports.signup = async (req, res, next) => {
       });
     }
 
-    // const [checkPhoneNoValid, checkEmailValid] = await Promise.all([
-    //   OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
-    //   OtpAuth.findById(validEmailId).select("verifiedEmail"),
-    // ]);
+    const [checkPhoneNoValid, checkEmailValid] = await Promise.all([
+      OtpAuth.findById(validPhoneNoId).select("verifiedNumber"),
+      // OtpAuth.findById(validEmailId).select("verifiedEmail"),
+    ]);
     // const verifiedEmail = checkEmailValid?.verifiedEmail;
-    // const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
+    const verifiedNumber = checkPhoneNoValid?.verifiedNumber;
 
-    // if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
-    //   return res.status(401).json({ message: "Number not verified" });
-    // }
+    if (!checkPhoneNoValid || !checkPhoneNoValid.verifiedNumber) {
+      return res.status(401).json({ message: "Number not verified" });
+    }
 
     const vendorExists = await Vendor.findOne({ phoneNo: phoneNo });
     if (vendorExists) {
@@ -68,8 +68,8 @@ exports.signup = async (req, res, next) => {
       password: hashedPw,
       type: type,
       gender: gender,
-      // fcmToken: fcmToken,
-      // verifyPhoneNo: verifiedNumber,
+      fcmToken: fcmToken,
+      verifyPhoneNo: verifiedNumber,
       // verifyEmail: verifiedEmail,
       accountCreatedOn: new Date().toDateString(),
     });
