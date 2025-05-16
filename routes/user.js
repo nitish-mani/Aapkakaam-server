@@ -32,6 +32,11 @@ router.patch("/edit/password", user_controller.user_controller_patch_password);
 
 router.patch("/edit/name", is_user, user_controller.user_controller_patch_name);
 router.patch(
+  "/edit/fcmToken",
+  is_user,
+  user_controller.user_controller_patch_fcmToken
+);
+router.patch(
   "/edit/email",
   is_user,
   user_controller.user_controller_patch_email

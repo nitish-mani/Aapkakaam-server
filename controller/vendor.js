@@ -245,6 +245,35 @@ exports.vendor_controller_patch_name = (req, res, next) => {
 };
 
 ///////////////////////////////////////
+///// for modifing vendor name //////
+//////////////////////////////////////
+
+exports.vendor_controller_patch_fcmToken = (req, res, next) => {
+  const fcmToken = req.body.fcmToken;
+  const vendorId = req.body.vendorId;
+  let loadedVendor;
+  Vendor.findByIdAndUpdate(vendorId, { fcmToken }, { returnDocument: "after" })
+    .then((result) => {
+      if (!result) {
+        const error = new Error("Could not find Vendor.");
+        error.statusCode = 404;
+        throw error;
+      }
+      loadedVendor = result;
+      res.status(200).json({
+        fcmToken: loadedVendor.fcmToken,
+        message: "fcmToken Updated Successfully ",
+      });
+    })
+    .catch((err) => {
+      if (!err.statusCode) {
+        err.statusCode = 500;
+      }
+      next(err);
+    });
+};
+
+///////////////////////////////////////
 ///// for modifing vendor phoneNo //////
 //////////////////////////////////////
 
