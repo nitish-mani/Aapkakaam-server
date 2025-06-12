@@ -21,6 +21,7 @@ const userSchema = new Schema({
   bonusAmount: { type: Number, default: 150 },
   balance: { type: Number, default: 0 },
   fcmToken: { type: String },
+  agreedToTnCnP: { type: Boolean, default: false },
 });
 
 module.exports = mongoose.model("User", userSchema);

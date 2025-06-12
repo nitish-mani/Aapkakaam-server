@@ -35,6 +35,7 @@ exports.signup = async (req, res, next) => {
       fcmToken,
       validPhoneNoId,
       validEmailId,
+      agreedToTnCnP,
     } = req.body;
 
     if (password.length < 6) {
@@ -68,6 +69,7 @@ exports.signup = async (req, res, next) => {
       gender,
       fcmToken: fcmToken,
       verifyPhoneNo: verifiedNumber,
+      agreedToTnCnP: agreedToTnCnP,
       // verifyEmail: verifiedEmail,
       accountCreatedOn: new Date().toDateString(),
     });
