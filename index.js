@@ -5,6 +5,7 @@ const vendorRoute = require("./routes/vendor");
 const employeeRoute = require("./routes/employee");
 const bookingsRoute = require("./routes/bookings");
 const shareRoute = require("./routes/share");
+const pincodeRoute = require("./routes/pincode");
 const adminRoute = require("./routes/admin");
 const path = require("path");
 const { all } = require("axios");
@@ -23,7 +24,7 @@ app.get("/", function (req, res) {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
+// const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
@@ -42,11 +43,13 @@ app.use("/employee", employeeRoute);
 
 app.use("/share", shareRoute);
 app.use("/bookings", bookingsRoute);
+app.use("/pincode", pincodeRoute);
 
 app.use((error, req, res, next) => {
   const status = error.statusCode || 500;
   const message = error.message;
   const data = error.data;
+  console.log(error);
   res.status(status).json({ message: message, data: data });
 });
 
