@@ -7,6 +7,7 @@ const bookingsRoute = require("./routes/bookings");
 const shareRoute = require("./routes/share");
 const pincodeRoute = require("./routes/pincode");
 const adminRoute = require("./routes/admin");
+const payment = require("./routes/payment");
 const path = require("path");
 const { all } = require("axios");
 const { ALL } = require("dns");
@@ -17,12 +18,13 @@ const PORT = process.env.PORT;
 
 const app = express();
 //
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "dist")));
 
-app.get("/", function (req, res) {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
-});
+// app.get("/", function (req, res) {
+//   res.sendFile(path.join(__dirname, "dist", "index.html"));
+// });
 
 // const allowedOrigin = ["aapkakaam.com", "aapkakaam.in"];
 app.use((req, res, next) => {
@@ -35,7 +37,7 @@ app.use((req, res, next) => {
 
   next();
 });
-
+app.use("/payment", payment);
 app.use("/admin", adminRoute);
 app.use("/user", userRoute);
 app.use("/vendor", vendorRoute);

@@ -1,15 +1,16 @@
-// const { Result } = require("express-validator");
 const User = require("../models/user");
 const Vendor = require("../models/vendor");
 const Bookings = require("../models/bookings");
 const OtpAuth = require("../models/otpAuth");
+const Share = require("../models/share");
 const bcrypt = require("bcryptjs");
 const { ObjectId } = require("mongodb");
 const { sendNotification } = require("./singalMessaging");
-
 const nodemailer = require("nodemailer");
 const { default: axios } = require("axios");
-const { TransitionStorageClass } = require("@aws-sdk/client-s3");
+const mongoose = require("mongoose");
+
+require("dotenv").config();
 
 const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
 
@@ -17,126 +18,170 @@ const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
 ///// for Email Verification //////
 //////////////////////////////////
 
-exports.vendor_controller_verify_email = (req, res, next) => {
-  const otpE = otp();
-  const email = req.body.email;
-  const otpId = req.body.otpId;
+exports.vendor_controller_verify_email = async (req, res, next) => {
+  try {
+    const otpE = otp();
+    const email = req.body.email;
+    const otpId = req.body.otpId;
 
-  // Function to send OTP via email
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
 
-  OtpAuth.findById(otpId)
-    .then((result) => {
-      const otp = new OtpAuth({
-        otp: otpE,
-      });
-      return otp.save().then((result) => {
-        const transporter = nodemailer.createTransport({
-          host: "smtp.gmail.com",
-          port: 587,
-          auth: {
-            user: "otp-verification@aapkakaam.com",
-            pass: "jwonqzmtwkmlideu",
-          },
+    const otpRecord = new OtpAuth({
+      otp: otpE,
+    });
+
+    const result = await otpRecord.save();
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      port: process.env.SMTP_PORT || 587,
+      auth: {
+        user: process.env.SMTP_USER || "otp-verification@aapkakaam.com",
+        pass: process.env.SMTP_PASS || "jwonqzmtwkmlideu",
+      },
+    });
+
+    const mailOptions = {
+      from: process.env.SMTP_FROM || "otp-verification@aapkakaam.com",
+      to: email,
+      subject: "OTP Verification",
+      text: `Your OTP for email verification is: ${otpE}`,
+    };
+
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        res
+          .status(500)
+          .json({ message: "Failed to send OTP", error: error.message });
+      } else {
+        res.status(200).json({
+          message: "OTP sent on Email",
+          verified: true,
+          otpId: result._id,
         });
-
-        function sendOTP(email, otp) {
-          const mailOptions = {
-            from: "otp-verification@aapkakaam.com",
-            to: email,
-            subject: "OTP Verification",
-            text: `Your OTP for email verification is: ${otp}`,
-          };
-
-          transporter.sendMail(mailOptions, function (error, info) {
-            if (error) {
-              res.json(error);
-            } else {
-              res.status(200).json({
-                message: "OTP sent on Email",
-                verified: true,
-                otpId: result._id,
-              });
-            }
-          });
-        }
-        sendOTP(email, otpE);
-      });
-    })
-    .catch((err) => res.json(err));
+      }
+    });
+  } catch (err) {
+    console.error("Email verification error:", err);
+    res.status(500).json({ message: "Failed to send OTP" });
+  }
 };
 
-exports.vendor_controller_otpE = (req, res, next) => {
-  const userOtp = req.body.emailOtp;
-  const otpId = req.body.otpId;
+exports.vendor_controller_otpE = async (req, res, next) => {
+  try {
+    const userOtp = req.body.emailOtp;
+    const otpId = req.body.otpId;
 
-  OtpAuth.findById(otpId)
-    .then((result) => {
-      if (result.otp == userOtp) {
-        OtpAuth.findByIdAndUpdate(
-          otpId,
-          {
-            verifiedEmail: true,
-          },
-          { returnDocument: "after" }
-        ).then((result) => res.json({ message: "OTP verified", verify: true }));
-      } else {
-        res.json({ message: "invalid OTP", verify: false });
-      }
-    })
-    .catch((err) => {
-      res.status(404).json({ message: "Not authorized" });
-    });
+    if (!userOtp || !otpId) {
+      return res.status(400).json({ message: "OTP and OTP ID are required" });
+    }
+
+    const result = await OtpAuth.findById(otpId);
+
+    if (!result) {
+      return res.status(404).json({ message: "Invalid OTP request" });
+    }
+
+    // Check if OTP is expired (10 minutes)
+    const isExpired = Date.now() - result.createdAt > 10 * 60 * 1000;
+    if (isExpired) {
+      await OtpAuth.findByIdAndDelete(otpId);
+      return res.status(410).json({ message: "OTP has expired" });
+    }
+
+    if (result.otp == userOtp) {
+      await OtpAuth.findByIdAndUpdate(
+        otpId,
+        { verifiedEmail: true },
+        { new: true }
+      );
+      res.json({ message: "OTP verified", verify: true });
+    } else {
+      res.status(400).json({ message: "invalid OTP", verify: false });
+    }
+  } catch (err) {
+    console.error("Email OTP verification error:", err);
+    res.status(404).json({ message: "Not authorized" });
+  }
 };
 
 ////////////////////////////////////////////
 ///// for Mobile Number Verification //////
 //////////////////////////////////////////
 
-exports.vendor_controller_verify_phoneNo = (req, res, next) => {
-  const otpM = otp();
-  const phoneNo = req.body.phoneNo;
-  const otpId = req.body.otpId;
+exports.vendor_controller_verify_phoneNo = async (req, res, next) => {
+  try {
+    const otpM = otp();
+    const phoneNo = req.body.phoneNo;
+    const otpId = req.body.otpId;
 
-  OtpAuth.findById(otpId)
-    .then((result) => {
-      const otp = new OtpAuth({
-        otp: otpM,
-      });
-      return otp.save().then((result) => {
-        axios
-          .get(
-            `${process.env.FAST2SMS}&route=otp&variables_values=${otpM}&flash=0&numbers=${phoneNo}`
-          )
-          .then((succ) =>
-            res.status(200).json({
-              message: "OTP sent successfully",
-              verified: true,
-              otpId: result._id,
-            })
-          )
-          .catch((err) => res.send(err.response.data));
-      });
-    })
-    .catch((err) => res.send(err.response.data));
+    if (!phoneNo) {
+      return res.status(400).json({ message: "Phone number is required" });
+    }
+    const existingUser = await User.findOne({ phoneNo });
+    const existingVendor = await Vendor.findOne({ phoneNo });
+    if (existingVendor || existingUser) {
+      return res.status(409).json({ message: "Mobile number already exists!" });
+    }
+    const otpRecord = new OtpAuth({
+      otp: otpM,
+    });
+
+    const result = await otpRecord.save();
+
+    const smsResponse = await axios.get(
+      `${process.env.FAST2SMS}?route=otp&variables_values=${otpM}&flash=0&numbers=${phoneNo}`
+    );
+
+    res.status(200).json({
+      message: "OTP sent successfully",
+      verified: true,
+      otpId: result._id,
+    });
+  } catch (err) {
+    console.error("Phone verification error:", err);
+    res.status(500).json({ message: "Failed to send OTP" });
+  }
 };
 
-exports.vendor_controller_otp = (req, res, next) => {
-  const userOtp = req.body.otp;
-  const otpId = req.body.otpId;
+exports.vendor_controller_otp = async (req, res, next) => {
+  try {
+    const userOtp = req.body.otp;
+    const otpId = req.body.otpId;
 
-  OtpAuth.findById(otpId)
-    .then((result) => {
-      if (result.otp == userOtp) {
-        OtpAuth.findByIdAndUpdate(
-          otpId,
-          { verifiedNumber: true },
-          { returnDocument: "after" }
-        ).then((result) => res.json({ message: "OTP verified", verify: true }));
-      } else {
-        res.json({ message: "invalid OTP", verify: false });
-      }
-    })
-    .catch((err) => res.status(404).json({ message: "Not authorized" }));
+    if (!userOtp || !otpId) {
+      return res.status(400).json({ message: "OTP and OTP ID are required" });
+    }
+
+    const result = await OtpAuth.findById(otpId);
+
+    if (!result) {
+      return res.status(404).json({ message: "Invalid OTP request" });
+    }
+
+    // Check if OTP is expired (10 minutes)
+    const isExpired = Date.now() - result.createdAt > 10 * 60 * 1000;
+    if (isExpired) {
+      await OtpAuth.findByIdAndDelete(otpId);
+      return res.status(410).json({ message: "OTP has expired" });
+    }
+
+    if (result.otp == userOtp) {
+      await OtpAuth.findByIdAndUpdate(
+        otpId,
+        { verifiedNumber: true },
+        { new: true }
+      );
+      res.json({ message: "OTP verified", verify: true });
+    } else {
+      res.status(400).json({ message: "invalid OTP", verify: false });
+    }
+  } catch (err) {
+    console.error("Phone OTP verification error:", err);
+    res.status(404).json({ message: "Not authorized" });
+  }
 };
 
 ///////////////////////////////////////
@@ -145,22 +190,34 @@ exports.vendor_controller_otp = (req, res, next) => {
 
 exports.vendor_controller_patch_password = async (req, res, next) => {
   try {
-    const { password, email, otpId } = req.body;
+    const password = req.body.password;
+    const email = req.body.email;
+    const otpId = req.body.otpId;
+
+    if (!password || !email || !otpId) {
+      return res
+        .status(400)
+        .json({ message: "Password, email, and OTP ID are required" });
+    }
+
+    if (password.length < 6) {
+      return res.status(401).json({
+        message: "Password must be at least 6 characters long",
+      });
+    }
 
     const otpDoc = await OtpAuth.findById(otpId);
-
-    if (!otpDoc || !otpDoc.verifiedEmail) {
+    if (!otpDoc?.verifiedEmail) {
       return res
         .status(404)
         .json({ message: "Not authorized or not verified vendor." });
     }
 
     const hashPass = await bcrypt.hash(password, 12);
-
     const updatedVendor = await Vendor.findOneAndUpdate(
       { email: email },
       { password: hashPass },
-      { returnDocument: "after" }
+      { new: true }
     );
 
     if (!updatedVendor) {
@@ -171,6 +228,7 @@ exports.vendor_controller_patch_password = async (req, res, next) => {
 
     res.status(201).json({ message: "Password changed successfully" });
   } catch (err) {
+    console.error("Password update error:", err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -179,249 +237,282 @@ exports.vendor_controller_patch_password = async (req, res, next) => {
 //// for updating vendor address //////
 ///////////////////////////////////////
 
-exports.vendor_controller_patch_address = (req, res, next) => {
-  const vendorId = req.body.vendorId;
+exports.vendor_controller_patch_address = async (req, res, next) => {
+  try {
+    const vendorId = req.body.vendorId;
+    const vill = req.body.vill;
+    const post = req.body.post;
+    const dist = req.body.dist;
+    const state = req.body.state;
+    const pincode = req.body.pincode;
 
-  const vill = req.body.vill;
-  const post = req.body.post;
-  const dist = req.body.dist;
-  const state = req.body.state;
-  const pincode = req.body.pincode;
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
 
-  let loadedVendor;
+    const address = { vill, post, dist, state, pincode };
 
-  Vendor.findByIdAndUpdate(
-    vendorId,
-    { address: { vill, post, dist, state, pincode }, pincode: pincode },
-    { returnDocument: "after" }
-  )
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedVendor = result;
-      res.status(200).json({
-        address: loadedVendor.address,
-        message: "Address Updated Successfully ",
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+    const loadedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      {
+        address: [address],
+        pincode: pincode,
+      },
+      { new: true }
+    );
+
+    if (!loadedVendor) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.status(200).json({
+      address: loadedVendor.address,
+      message: "Address Updated Successfully",
     });
+  } catch (err) {
+    console.error("Address update error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////
 ///// for modifing vendor name //////
 //////////////////////////////////////
 
-exports.vendor_controller_patch_name = (req, res, next) => {
-  const name = req.body.name;
-  const vendorId = req.body.vendorId;
-  let loadedVendor;
-  Vendor.findByIdAndUpdate(vendorId, { name }, { returnDocument: "after" })
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedVendor = result;
-      res.status(200).json({
-        name: loadedVendor.name,
-        message: "Name Updated Successfully ",
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+exports.vendor_controller_patch_name = async (req, res, next) => {
+  try {
+    const name = req.body.name;
+    const vendorId = req.body.vendorId;
+
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+
+    const loadedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      { name },
+      { new: true }
+    );
+
+    if (!loadedVendor) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.status(200).json({
+      name: loadedVendor.name,
+      message: "Name Updated Successfully",
     });
+  } catch (err) {
+    console.error("Name update error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////
-///// for modifing vendor name //////
+///// for modifing vendor fcm token //////
 //////////////////////////////////////
 
-exports.vendor_controller_patch_fcmToken = (req, res, next) => {
-  const fcmToken = req.body.fcmToken;
-  const vendorId = req.body.vendorId;
-  let loadedVendor;
-  Vendor.findByIdAndUpdate(vendorId, { fcmToken }, { returnDocument: "after" })
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedVendor = result;
-      res.status(200).json({
-        fcmToken: loadedVendor.fcmToken,
-        message: "fcmToken Updated Successfully ",
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+exports.vendor_controller_patch_fcmToken = async (req, res, next) => {
+  try {
+    const fcmToken = req.body.fcmToken;
+    const vendorId = req.body.vendorId;
+
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+
+    const loadedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      { fcmToken },
+      { new: true }
+    );
+
+    if (!loadedVendor) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.status(200).json({
+      fcmToken: loadedVendor.fcmToken,
+      message: "fcmToken Updated Successfully",
     });
+  } catch (err) {
+    console.error("FCM token update error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////
 ///// for modifing vendor phoneNo //////
 //////////////////////////////////////
 
-exports.vendor_controller_patch_phoneNo = (req, res, next) => {
-  const phoneNo = req.body.phoneNo;
-  const vendorId = req.body.vendorId;
-  const otpId = req.body.otpId;
-  let loadedVendor;
-  OtpAuth.findById(otpId)
-    .then((result) => {
-      if (result?.verifiedNumber)
-        Vendor.findByIdAndUpdate(
-          vendorId,
-          { phoneNo },
-          { returnDocument: "after" }
-        )
-          .then((result) => {
-            if (!result) {
-              const error = new Error("Could not find Vendor.");
-              error.statusCode = 404;
-              throw error;
-            }
-            loadedVendor = result;
-            verifiedNumber = false;
-            res.status(200).json({
-              phoneNo: loadedVendor.phoneNo,
-              message: "Phone Number Updated Successfully ",
-            });
-          })
-          .catch((err) => {
-            if (!err.statusCode) {
-              err.statusCode = 500;
-            }
-            next(err);
-          });
-      else {
-        res.status(404).json({ message: "Not Verified Vendor" });
-      }
-    })
-    .catch((err) => {
-      res.status(404).json({ message: "Not Authorized" });
+exports.vendor_controller_patch_phoneNo = async (req, res, next) => {
+  try {
+    const phoneNo = req.body.phoneNo;
+    const vendorId = req.body.vendorId;
+    const otpId = req.body.otpId;
+
+    if (!vendorId || !phoneNo || !otpId) {
+      return res
+        .status(400)
+        .json({ message: "Vendor ID, phone number, and OTP ID are required" });
+    }
+
+    const result = await OtpAuth.findById(otpId);
+    if (!result?.verifiedNumber) {
+      return res.status(404).json({ message: "Not Verified Vendor" });
+    }
+
+    // Check if phone number is already used
+    const existingVendor = await Vendor.findOne({
+      phoneNo,
+      _id: { $ne: vendorId },
     });
+    if (existingVendor) {
+      return res.status(401).json({ message: "Phone number already exists!" });
+    }
+
+    const loadedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      { phoneNo },
+      { new: true }
+    );
+
+    if (!loadedVendor) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.status(200).json({
+      phoneNo: loadedVendor.phoneNo,
+      message: "Phone Number Updated Successfully",
+    });
+  } catch (err) {
+    console.error("Phone number update error:", err);
+    res.status(404).json({ message: "Not Authorized" });
+  }
 };
 
 ///////////////////////////////////////
 ///// for modifing vendor email //////
 //////////////////////////////////////
 
-exports.vendor_controller_patch_email = (req, res, next) => {
-  const email = req.body.email;
-  const vendorId = req.body.vendorId;
-  const otpId = req.body.otpId;
-  let loadedVendor;
-  OtpAuth.findById(otpId)
-    .then((result) => {
-      if (result?.verifiedEmail)
-        Vendor.findOne({ email: email }).then((resuslt) => {
-          if (resuslt?.email)
-            return res.status(401).json({ message: "Email already exist !" });
+exports.vendor_controller_patch_email = async (req, res, next) => {
+  try {
+    const email = req.body.email;
+    const vendorId = req.body.vendorId;
+    const otpId = req.body.otpId;
 
-          Vendor.findByIdAndUpdate(
-            vendorId,
-            { email },
-            { returnDocument: "after" }
-          )
-            .then((result) => {
-              if (!result) {
-                const error = new Error("Could not find Vendor.");
-                error.statusCode = 404;
-                throw error;
-              }
-              loadedVendor = result;
-              verifiedEmail = false;
-              res.status(200).json({
-                email: loadedVendor.email,
-                message: "Email Updated Successfully ",
-              });
-            })
-            .catch((err) => {
-              if (!err.statusCode) {
-                err.statusCode = 500;
-              }
-              next(err);
-            });
-        });
-      else {
-        res.status(404).json({ message: "Not Verified Vendor" });
-      }
-    })
-    .catch((err) => {
-      res.status(404).json({ message: "Not Authorized" });
+    if (!vendorId || !email || !otpId) {
+      return res
+        .status(400)
+        .json({ message: "Vendor ID, email, and OTP ID are required" });
+    }
+
+    const result = await OtpAuth.findById(otpId);
+    if (!result?.verifiedEmail) {
+      return res.status(404).json({ message: "Not Verified Vendor" });
+    }
+
+    // Check if email already exists
+    const existingVendor = await Vendor.findOne({
+      email: email,
+      _id: { $ne: vendorId },
     });
+    if (existingVendor?.email) {
+      return res.status(401).json({ message: "Email already exist !" });
+    }
+
+    const loadedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      { email },
+      { new: true }
+    );
+
+    if (!loadedVendor) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.status(200).json({
+      email: loadedVendor.email,
+      message: "Email Updated Successfully",
+    });
+  } catch (err) {
+    console.error("Email update error:", err);
+    res.status(404).json({ message: "Not Authorized" });
+  }
 };
 
 ///////////////////////////////////////////
 ///// for modifing vendor wage rate //////
 /////////////////////////////////////////
 
-exports.vendor_controller_patch_wageRate = (req, res, next) => {
-  const wageRate = req.body.wageRate;
-  const vendorId = req.body.vendorId;
-  let loadedVendor;
-  Vendor.findByIdAndUpdate(vendorId, { wageRate }, { returnDocument: "after" })
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedVendor = result;
-      res.status(200).json({
-        wageRate: loadedVendor.wageRate,
-        message: "Wage Rate Updated Successfully ",
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+exports.vendor_controller_patch_wageRate = async (req, res, next) => {
+  try {
+    const wageRate = req.body.wageRate;
+    const wageRateType = req.body.wageRateType;
+    const vendorId = req.body.vendorId;
+
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+
+    const loadedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      { wageRate, wageRateType },
+      { new: true }
+    );
+
+    if (!loadedVendor) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.status(200).json({
+      wageRate: loadedVendor.wageRate,
+      wageRateType: loadedVendor.wageRateType,
+      message: "Wage Rate Updated Successfully",
     });
+  } catch (err) {
+    console.error("Wage rate update error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////
 ///// for getting vendor orders //////
 //////////////////////////////////////
 
-exports.vendor_controller_getOrders = (req, res, next) => {
-  const vendorId = req.params.vendorId;
+exports.vendor_controller_getOrders = async (req, res, next) => {
+  try {
+    const vendorId = req.params.vendorId;
 
-  let loadedVendor;
-  Vendor.findOne({ _id: vendorId })
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
 
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedVendor = result;
-      res.status(200).json({ orders: loadedVendor.orders });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+    const bookings = await Bookings.find({ vendorId: vendorId })
+
+      .sort({ bookedOn: -1 })
+      .lean();
+
+    res.status(200).json({ orders: bookings });
+  } catch (err) {
+    console.error("Get orders error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////
@@ -431,24 +522,33 @@ exports.vendor_controller_getOrders = (req, res, next) => {
 exports.vendor_controller_getShare = async (req, res, next) => {
   try {
     const vendorId = req.params.vendorId;
-    const skip = parseInt(req.params.skip) || 0; // Default skip to 0 if not provided
-    const limit = 12; // Default limit to 12 if not provided
+    let skip = parseInt(req.params.skip) || 0;
+    const limit = 12;
 
-    // Retrieve vendor document
-    const vendor = await Vendor.findOne({ _id: vendorId }).lean();
-
-    if (!vendor) {
-      const error = new Error("Could not find Vendor.");
-      error.statusCode = 404;
-      throw error;
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
     }
 
-    // Reverse the share array and paginate
-    const reversedShare = vendor.share.slice().reverse();
-    const paginatedShare = reversedShare.slice(skip, skip + limit);
+    const total = await Share.countDocuments({ vendorId: vendorId });
+    if (skip >= total) {
+      skip = 0; // Reset to first page or handle as needed
+      // OR: skip = Math.max(0, total - limit); // Go to last page
+    }
 
-    res.status(200).json({ share: paginatedShare, total: vendor.share.length });
+    // Also ensure skip doesn't cause empty results when near the end
+    if (skip + limit > total && skip > 0) {
+      skip = Math.max(0, total - limit);
+    }
+    const shares = await Share.find({ vendorId: vendorId })
+      .sort({ shareDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    console.log(shares, total);
+    res.status(200).json({ share: shares, total: total });
   } catch (err) {
+    console.error("Get share error:", err);
     if (!err.statusCode) {
       err.statusCode = 500;
     }
@@ -477,11 +577,20 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
       isSelfBooking,
     } = req.body;
     const vendorId = req.params.vendorId;
+
+    if (!vendorId || !vendorUser || !name || !phoneNo) {
+      return res.status(400).json({ message: "Required fields are missing" });
+    }
+
+    const bookingForDate = `${date}/${month + 1}/${year}`;
     const bookingTime = Date.now();
     const bookingCost = 30;
-    const vendor = await Vendor.findById(vendorId).select("balance fcmToken");
+
+    const vendor = await Vendor.findById(vendorId).select(
+      "balance fcmToken cd shareBy commission"
+    );
     const vendorUserDoc = await Vendor.findById(vendorUser).select(
-      "bonusAmount"
+      "bonusAmount cd shareBy"
     );
 
     if (!vendor || !vendorUserDoc) {
@@ -490,53 +599,67 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
         .json({ message: "Vendor or vendor user not found." });
     }
 
-    if (isSelfBooking) {
-    } else {
+    if (!isSelfBooking) {
       if (
-        vendor.balance < bookingCost ||
+        vendor.balance < vendor.commission ||
         vendorUserDoc.bonusAmount < bookingCost
       ) {
         return res.status(400).json({ message: "Insufficient balance." });
       }
     }
 
+    // Create booking in Bookings collection
+    const booking = new Bookings({
+      bookingId,
+      vendorId,
+      userId: vendorUser, // Using vendorUser as userId for vendor bookings
+      type: vendor.type,
+      pincode,
+      bookingDate: bookingForDate,
+      bookingTime,
+      bookedOn: new Date(),
+      cancelOrder: false,
+      orderCompleted: false,
+    });
+
+    await booking.save();
+
+    // Update vendor balance
     const updatedVendor = await Vendor.findByIdAndUpdate(
       vendorId,
       {
-        $push: {
-          bookings: {
-            bookingId,
-            name,
-            phoneNo,
-            address: { vill, post, dist, pincode },
-            date,
-            month,
-            year,
-            cancelOrder: false,
-            orderCompleted: false,
-            bookingTime,
-            cancelTime: "",
-            rating: 0,
-          },
+        $inc: {
+          balance: isSelfBooking ? 0 : -vendor.commission,
+          pending: 1,
         },
-        $inc: { balance: isSelfBooking ? 0 : -bookingCost },
       },
       { new: true }
     );
 
+    // Update vendor user bonus
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
       vendorUser,
       { $inc: { bonusAmount: isSelfBooking ? 0 : -bookingCost } },
       { new: true }
     );
+
+    // Handle referral updates using Share model
+    await handleReferralUpdates(vendorUserDoc, "vendor");
+    await handleReferralUpdates(vendor, "vendor");
+
+    // Send notifications
     try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSBOOKING
+        }variables_values=${name.toUpperCase()}%7C${bookingForDate}%7C&flash=1&numbers=${phoneNo}&schedule_time=`
+      );
+
       sendNotification(
         vendor.fcmToken,
         `...You are Booked...`,
         bookingId,
-        `Booking Done by ${name.toUpperCase()} on { ${date}/${
-          month + 1
-        }/${year} }`,
+        `Booking Done by ${name.toUpperCase()} on ${bookingForDate}`,
         "booking",
         month.toString(),
         year.toString()
@@ -550,6 +673,7 @@ exports.vendor_controller_bookNowV = async (req, res, next) => {
       bonusAmount: updatedVendorUser.bonusAmount,
     });
   } catch (err) {
+    console.error("BookNowV error:", err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -575,58 +699,79 @@ exports.vendor_controller_bookNowU = async (req, res, next) => {
     } = req.body;
     const vendorId = req.params.vendorId;
 
+    if (!vendorId || !userId || !name || !phoneNo) {
+      return res.status(400).json({ message: "Required fields are missing" });
+    }
+
+    const bookingForDate = `${date}/${month + 1}/${year}`;
     const bookingTime = Date.now();
     const bookingCost = 30;
 
-    const vendor = await Vendor.findById(vendorId).select("balance fcmToken");
-    const user = await User.findById(userId).select("bonusAmount");
+    const vendor = await Vendor.findById(vendorId).select(
+      "balance fcmToken cd shareBy commission"
+    );
+    const user = await User.findById(userId).select("bonusAmount cd shareBy");
 
     if (!vendor || !user) {
       return res.status(404).json({ message: "Vendor or user not found." });
     }
 
-    if (vendor.balance < bookingCost || user.bonusAmount < bookingCost) {
+    if (vendor.balance < vendor.commission || user.bonusAmount < bookingCost) {
       return res.status(400).json({ message: "Insufficient balance." });
     }
 
+    // Create booking in Bookings collection
+    const booking = new Bookings({
+      bookingId,
+      vendorId,
+      userId,
+      type: vendor.type,
+      pincode,
+      bookingDate: bookingForDate,
+      bookingTime,
+      bookedOn: new Date(),
+      cancelOrder: false,
+      orderCompleted: false,
+    });
+
+    await booking.save();
+
+    // Update vendor balance
     const updatedVendor = await Vendor.findByIdAndUpdate(
       vendorId,
       {
-        $push: {
-          bookings: {
-            bookingId,
-            name,
-            phoneNo,
-            address: { vill, post, dist, pincode },
-            date,
-            month,
-            year,
-            cancelOrder: false,
-            orderCompleted: false,
-            bookingTime,
-            cancelTime: "",
-            rating: 0,
-          },
+        $inc: {
+          balance: -vendor.commission,
+          pending: 1,
         },
-        $inc: { balance: -bookingCost },
       },
       { new: true }
     );
 
+    // Update user bonus
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $inc: { bonusAmount: -bookingCost } },
       { new: true }
     );
-    // Send notification
+
+    // Handle referral updates using Share model
+    await handleReferralUpdates(user, "user");
+    await handleReferralUpdates(vendor, "vendor");
+
+    // Send notifications
     try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSBOOKING
+        }variables_values=${name.toUpperCase()}%7C${bookingForDate}%7C&flash=1&numbers=${phoneNo}&schedule_time=`
+      );
+
       sendNotification(
         vendor.fcmToken,
         `...You are Booked...`,
         bookingId,
-        `Booking Done by ${name.toUpperCase()} on { ${date}/${
-          month + 1
-        }/${year} }`,
+        `Booking Done by ${name.toUpperCase()} on ${bookingForDate}`,
         "booking",
         month.toString(),
         year.toString()
@@ -640,10 +785,33 @@ exports.vendor_controller_bookNowU = async (req, res, next) => {
       bonusAmount: updatedUser.bonusAmount,
     });
   } catch (err) {
-    console.error(err);
+    console.error("BookNowU error:", err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
+// Helper function for referral updates
+async function handleReferralUpdates(entity, entityType) {
+  if (entity.shareBy && entity.cd) {
+    let referrerModel;
+    switch (entity.cd) {
+      case "user":
+        referrerModel = User;
+        break;
+      case "vendor":
+        referrerModel = Vendor;
+        break;
+      default:
+        return;
+    }
+
+    await referrerModel.findByIdAndUpdate(
+      entity.shareBy,
+      { $inc: { pending: 1 } },
+      { new: true }
+    );
+  }
+}
 
 //////////////////////////////////////
 //// to get bookings by vendor //////
@@ -652,52 +820,52 @@ exports.vendor_controller_bookNowU = async (req, res, next) => {
 exports.vendor_controller_getBookings = async (req, res, next) => {
   try {
     const vendorId = req.params.vendorId;
-    const year = parseInt(req.params.year); // Filter by year
-    const month = parseInt(req.params.month); // Filter by month
+    const year = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
 
-    // console.log(vendorId, year, month);
-    let pipeline = [
-      {
-        $match: {
-          _id: new ObjectId(vendorId),
-        },
-      },
-      {
-        $unwind: "$bookings",
-      },
-      {
-        $addFields: {
-          bookingYear: "$bookings.year",
-          bookingMonth: "$bookings.month",
-        },
-      },
-      {
-        $match: {
-          bookingYear: year,
-          bookingMonth: month,
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          booking: "$bookings",
-        },
-      },
-    ];
-
-    const vendor = (await Vendor.aggregate(pipeline)).reverse();
-
-    if (!vendor || vendor.length === 0) {
-      return res.status(200).json({
-        data: [],
-        message:
-          "Could not find Vendor bookings for the specified month and year.",
-      });
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
     }
-    // console.log(vendor);
 
-    res.status(200).json(vendor);
+    // Month names used in string dates like "Wed Oct 22 2025"
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    const monthStr = monthNames[month]; // e.g. month=10 → "Oct"
+    const yearStr = year.toString();
+
+    // Create regex patterns for both possible date formats
+    const regexPatterns = new RegExp(
+      `${monthStr}\\s+\\d{1,2}\\s+${yearStr}$`,
+      "i"
+    ); // "Wed Oct 22 2025"
+
+    console.log(regexPatterns);
+    // Find bookings matching any of the formats
+    const bookings = await Bookings.find({
+      vendorId: vendorId,
+      $or: [{ bookingDate: { $regex: regexPatterns } }],
+    })
+      .populate("userId", "name phoneNo address")
+      .sort({ bookedOn: -1 })
+      .lean();
+
+    const size = Buffer.byteLength(JSON.stringify(bookings));
+    console.log("Response size:", size, "bytes");
+    res.status(200).json(bookings);
   } catch (err) {
+    console.error("Get bookings error:", err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -706,131 +874,292 @@ exports.vendor_controller_getBookings = async (req, res, next) => {
 ///// for getting vendor by vendor //////
 //////////////////////////////////////
 
-exports.vendor_controller_getVendor = (req, res, next) => {
-  const vendorId = req.params.vendorId;
-  let loadedVendor;
-  Vendor.findOne({ _id: vendorId })
+exports.vendor_controller_getVendor = async (req, res, next) => {
+  try {
+    const vendorId = req.params.vendorId;
 
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      loadedVendor = result;
-      res.status(200).json({
-        rating: loadedVendor.rating,
-        ratingCount: loadedVendor.ratingCount,
-        balance: loadedVendor.balance,
-        bonusAmount: loadedVendor.bonusAmount,
-      });
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+
+    const loadedVendor = await Vendor.findOne({ _id: vendorId })
+      .select(
+        "rating ratingCount balance bonusAmount earning pending completed canceled"
+      )
+      .lean();
+
+    if (!loadedVendor) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.status(200).json({
+      rating: loadedVendor.rating,
+      ratingCount: loadedVendor.ratingCount,
+      balance: loadedVendor.balance,
+      bonusAmount: loadedVendor.bonusAmount,
+      earning: loadedVendor.earning,
+      stats: {
+        pending: loadedVendor.pending,
+        completed: loadedVendor.completed,
+        canceled: loadedVendor.canceled,
+      },
     });
+  } catch (err) {
+    console.error("Get vendor error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };
 
 ///////////////////////////////////////////
 //// for getting all vendor by user //////
 //////////////////////////////////////////
 
-exports.vendor_controller_getAll = async (req, res, next) => {
+// exports.vendor_controller_getAll = async (req, res, next) => {
+//   try {
+//     const type = req.params.type;
+//     const pincode = req.params.pincode;
+//     const bookingDate = req.params.bookingDate;
+//     const page = parseInt(req.params.page) || 1;
+//     const minRating = parseFloat(req.params.minRating) || 0;
+//     const minWageRate = parseFloat(req.params.minWageRate) || 0;
+//     const limit = 12;
+
+//     if (!type || !pincode || !bookingDate) {
+//       return res
+//         .status(400)
+//         .json({ message: "Type, pincode, and booking date are required" });
+//     }
+
+//     // Get vendorIds with bookings on the specified date
+//     const bookedVendorIds = await Bookings.distinct("vendorId", {
+//       type,
+//       pincode,
+//       bookingDate,
+//       cancelOrder: { $ne: true },
+//     });
+
+//     const matchStage = {
+//       type,
+//       pincode,
+//       balance: { $gte: 25 },
+//       wageRate: { $exists: true, $gte: minWageRate },
+//       rating: { $gte: minRating },
+//     };
+
+//     // Exclude booked vendors if any exist
+//     if (bookedVendorIds.length > 0) {
+//       matchStage._id = { $nin: bookedVendorIds };
+//     }
+
+//     const skip = (page - 1) * limit;
+
+//     const [vendors, totalCount] = await Promise.all([
+//       Vendor.find(matchStage)
+//         .select(
+//           "_id name type gender phoneNo rating ratingCount wageRate imgURL"
+//         )
+//         .skip(skip)
+//         .limit(limit)
+//         .lean(),
+
+//       Vendor.countDocuments(matchStage),
+//     ]);
+
+//     // Format phone numbers for security
+//     const formattedVendors = vendors.map((vendor) => ({
+//       ...vendor,
+//       phoneNo: vendor.phoneNo
+//         ? vendor.phoneNo.toString().replace(/(\d{2})\d{6}(\d{2})/, "$1******$2")
+//         : "",
+//     }));
+
+//     res.status(200).json({
+//       total: totalCount,
+//       vendors: formattedVendors,
+//     });
+//   } catch (err) {
+//     console.error("Get all vendors error:", err);
+//     if (!err.statusCode) {
+//       err.statusCode = 500;
+//     }
+//     next(err);
+//   }
+// };
+
+const JOB_COMMISSION = {
+  labour: 30,
+  mason: 50,
+  electrician: 50,
+  plumber: 50,
+  "ac mechanic": 50,
+  "fridge mechanic": 50,
+  driver: 50,
+  "home tutor": 50,
+  "milk man": 50,
+  parlour: 50,
+  "menhandi maker": 50,
+  "pundit ji": 50,
+  carpenter: 50,
+  "laptop repaire": 50,
+  "washer man": 50,
+  cook: 50,
+  painter: 50,
+  "car repaire": 50,
+  "bike repaire": 30,
+  "tiles fitter": 50,
+  "four wheeler": 100,
+  lights: 100,
+  bus: 200,
+  "tent house": 200,
+  generator: 100,
+  auto: 50,
+  dj: 50,
+  dhankutti: 50,
+  "aata chakki": 50,
+  "latrine tank cleaner": 100,
+  "marriage hall": 500,
+  shuttering: 100,
+  waiter: 100,
+  "marble fitter": 100,
+  "e-riksha": 50,
+  "pual cutter": 50,
+  ro: 100,
+  chaat: 100,
+  "dulha rath": 100,
+  "kirtan mandli": 100,
+  "mini truck": 50,
+  "fruit seller": 100,
+  "paan wala": 100,
+  "bhoonsa pual seller": 100,
+};
+function getCommission(jobType) {
+  return JOB_COMMISSION[jobType] || 50; // Default commission if not found
+}
+exports.vendor_controller_getAvailableVendor = async (req, res, next) => {
   try {
     const type = req.params.type;
     const pincode = req.params.pincode;
-    const bookingDate = new Date(req.params.bookingDate).toDateString();
-    const limit = 12;
+    const bookingDate = req.params.bookingDate;
     const page = parseInt(req.params.page) || 1;
     const minRating = parseFloat(req.params.minRating) || 0;
     const minWageRate = parseFloat(req.params.minWageRate) || 0;
+    const limit = 12;
+    const commission = getCommission(type);
+    if (!type || !pincode || !bookingDate) {
+      return res
+        .status(400)
+        .json({ message: "Type, pincode, and booking date are required" });
+    }
 
-    // 1. Get vendorIds with confirmed bookings (not cancelled)
+    // Get vendorIds with bookings on the specified date
     const bookedVendorIds = await Bookings.distinct("vendorId", {
       type,
       pincode,
       bookingDate,
       cancelOrder: { $ne: true },
     });
-    // 2. Build dynamic matchStage
-    const matchStage = {
+
+    const baseMatchStage = {
       type,
       pincode,
-      balance: { $gte: 25 },
+      balance: { $gte: commission },
       wageRate: { $exists: true, $gte: minWageRate },
       rating: { $gte: minRating },
     };
 
-    // Only exclude booked vendorIds if any exist
+    // Exclude booked vendors
     if (bookedVendorIds.length > 0) {
-      matchStage._id = { $nin: bookedVendorIds };
+      baseMatchStage._id = { $nin: bookedVendorIds };
     }
 
     const skip = (page - 1) * limit;
+    const requestContext = `${type}-${pincode}-${bookingDate}`;
 
-    const [vendors, totalCount] = await Promise.all([
-      Vendor.aggregate([
-        { $match: matchStage },
-        {
-          $project: {
-            _id: 1,
-            name: 1,
-            type: 1,
-            gender: 1,
-            phoneNo: {
-              $toString: "$phoneNo",
-            },
-            rating: 1,
-            ratingCount: 1,
-            wageRate: 1,
-            profilePic: 1,
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            name: 1,
-            type: 1,
-            gender: 1,
-            phoneNo: {
-              $let: {
-                vars: {
-                  len: { $strLenBytes: "$phoneNo" },
-                },
-                in: {
-                  $concat: [
-                    { $substrBytes: ["$phoneNo", 0, 2] },
-                    "******",
-                    {
-                      $substrBytes: [
-                        "$phoneNo",
-                        { $subtract: ["$$len", 2] },
-                        2,
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-            rating: 1,
-            ratingCount: 1,
-            wageRate: 1,
-            profilePic: 1,
-          },
-        },
-        { $skip: skip },
-        { $limit: limit },
-      ]),
+    // STRATEGY 1: Find and claim fresh vendors atomically
+    const session = await Vendor.startSession();
+    let vendors = [];
+    let totalCount;
 
-      Vendor.countDocuments(matchStage),
-    ]);
+    try {
+      await session.withTransaction(async () => {
+        // Find fresh vendors and mark them as shown in one operation
+        const freshVendors = await Vendor.find({
+          ...baseMatchStage,
+          $or: [
+            { lastShownContext: { $ne: requestContext } },
+            { lastShownContext: { $exists: false } },
+          ],
+        })
+          .session(session)
+          .limit(limit)
+          .select(
+            "_id name type gender phoneNo rating ratingCount wageRate imgURL"
+          )
+          .lean();
+
+        if (freshVendors.length > 0) {
+          // Mark these vendors as shown for this context
+          await Vendor.updateMany(
+            { _id: { $in: freshVendors.map((v) => v._id) } },
+            { $set: { lastShownContext: requestContext } },
+            { session }
+          );
+
+          vendors = freshVendors;
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    // Get total count
+    totalCount = await Vendor.countDocuments(baseMatchStage);
+
+    // STRATEGY 2: If no fresh vendors, get shuffled available vendors
+    if (vendors.length === 0) {
+      const allAvailableVendors = await Vendor.find(baseMatchStage)
+        .select(
+          "_id name type gender phoneNo rating ratingCount wageRate imgURL"
+        )
+        .lean();
+
+      totalCount = allAvailableVendors.length;
+
+      if (allAvailableVendors.length > 0) {
+        // Shuffle using Fisher-Yates algorithm
+        const shuffledVendors = [...allAvailableVendors];
+        for (let i = shuffledVendors.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffledVendors[i], shuffledVendors[j]] = [
+            shuffledVendors[j],
+            shuffledVendors[i],
+          ];
+        }
+
+        // Apply pagination
+        vendors = shuffledVendors.slice(skip, skip + limit);
+      }
+    }
+
+    // Format phone numbers for security
+    const formattedVendors = vendors.map((vendor) => ({
+      ...vendor,
+      phoneNo: vendor.phoneNo
+        ? vendor.phoneNo.toString().replace(/(\d{2})\d{6}(\d{2})/, "$1******$2")
+        : "",
+    }));
+
+    // SEND RESPONSE
     res.status(200).json({
       total: totalCount,
-      vendors,
+      vendors: formattedVendors,
+      freshData: vendors.length > 0,
     });
   } catch (err) {
+    console.error("Get all vendors error:", err);
     if (!err.statusCode) {
       err.statusCode = 500;
     }
@@ -842,21 +1171,55 @@ exports.vendor_controller_getAll = async (req, res, next) => {
 //// for getting vendor which are present in orderlist of user  //////
 //////////////////////////////////////////////////////////////////////
 
-exports.vendor_controller_getOne = (req, res, next) => {
-  const vendorId = req.params.vendorId;
-  Vendor.find({ _id: vendorId })
-    .then((result) => {
-      if (!result) {
-        const error = new Error("Could not find Vendor.");
-        error.statusCode = 404;
-        throw error;
-      }
-      res.json(result);
-    })
-    .catch((err) => {
-      if (!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
-    });
+exports.vendor_controller_getOne = async (req, res, next) => {
+  try {
+    const vendorId = req.params.vendorId;
+
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+
+    const result = await Vendor.findOne({ _id: vendorId }).lean();
+
+    if (!result) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error("Get one vendor error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
+};
+
+///////// Earnings ////////
+exports.vendor_controller_getEarnings = async (req, res, next) => {
+  try {
+    const vendorId = req.params.vendorId;
+
+    if (!vendorId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+
+    const result = await Vendor.findOne({ _id: vendorId })
+      .select(
+        "earning pendingShareBy completedShareBy canceledShareBy shareCount"
+      )
+      .lean();
+
+    if (!result) {
+      return res.status(404).json({ message: "Could not find Vendor." });
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error("Get one vendor error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 };

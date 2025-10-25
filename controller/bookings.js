@@ -3,539 +3,895 @@ const Vendor = require("../models/vendor");
 const User = require("../models/user");
 const { ObjectId } = require("mongodb");
 const { sendNotification } = require("./singalMessaging");
+const { default: axios } = require("axios");
 
 exports.bookings_controller_postU = async (req, res, next) => {
   try {
-    const { userId, vendorId, bookingDate, type, pincode } = req.body;
-    const formattedBookingDate = new Date(bookingDate).toDateString();
-    const bookedOn = new Date().toDateString();
-    const bookingTime = Date.now();
+    const { userId, vendorId, bookingDate, type, pincode, name } = req.body;
 
-    const vendor = await Vendor.findById(vendorId).select("balance");
-    const user = await User.findById(userId).select("bonusAmount");
-
-    if (!user || user.bonusAmount < 30 || !vendor || vendor.balance < 30) {
-      return res
-        .status(302)
-        .json({ message: "You don't have enough balance for booking" });
+    if (!userId || !vendorId || !bookingDate || !type || !pincode) {
+      return res.status(400).json({ message: "All fields are required" });
     }
 
-    const bookings = new Bookings({
+    const formattedBookingDate = new Date(bookingDate).toDateString();
+    const bookedOn = new Date();
+    const bookingTime = Date.now();
+
+    const vendor = await Vendor.findById(vendorId).select(
+      "balance commission phoneNo"
+    );
+    const user = await User.findById(userId).select("bonusAmount");
+
+    if (!user || !vendor) {
+      return res.status(404).json({ message: "User or vendor not found" });
+    }
+
+    if (user.bonusAmount < 30 || vendor.balance < vendor.commission) {
+      return res
+        .status(402)
+        .json({ message: "Insufficient balance for booking" });
+    }
+
+    const booking = new Bookings({
       userId,
       vendorId,
       bookingDate: formattedBookingDate,
       type,
       pincode,
       bookedOn,
+      bookingTime,
       cancelOrder: false,
       orderCompleted: false,
       rating: 0,
-      bookingTime,
+      ratingPermission: false,
     });
 
-    const result = await bookings.save();
-    res.status(200).json({ bookingId: result._id });
+    const result = await booking.save();
+
+    // Update user and vendor stats
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        $inc: { bonusAmount: -30, bookingCount: 1, pending: 1 },
+      },
+      { new: true }
+    );
+
+    const discountData = await Vendor.findById(vendorId).select(
+      "totalDiscount transactionCount"
+    );
+
+    const averageDiscount =
+      (discountData.totalDiscount / discountData.transactionCount === 0
+        ? 1
+        : discountData.transactionCount) * 0.01;
+
+    await Vendor.findByIdAndUpdate(
+      vendorId,
+      {
+        $inc: {
+          balance: -vendor.commission * averageDiscount,
+          pendingVendor: 1,
+          bookingCountVendor: 1,
+        },
+      },
+      { new: true }
+    );
+
+    const booking1 = await Bookings.findById(result._id)
+      .populate("userId", "_id cd shareBy")
+      .populate("vendorId", "_id cd shareBy commission");
+
+    // Handle referral updates
+    await handleReferralUpdates(booking1.userId._id, "user", "pending");
+    await handleReferralUpdates(booking1.vendorId._id, "vendor", "pending");
+
+    // Send notifications
+    // try {
+    //   await axios.get(
+    //     `${
+    //       process.env.FAST2SMSBOOKING
+    //     }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
+    //       vendor.phoneNo
+    //     }&schedule_time=`
+    //   );
+
+    //   sendNotification(
+    //     vendor.fcmToken,
+    //     `...You are Booked...`,
+    //     `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
+    //     "booking"
+    //   );
+    // } catch (err) {
+    //   console.error("Notification failed", err);
+    // }
+
+    res.status(201).json({
+      message: "Booking created successfully",
+
+      bonusAmount: updatedUser.bonusAmount,
+    });
   } catch (err) {
+    console.error("PostU booking error:", err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 exports.bookings_controller_postV = async (req, res, next) => {
   try {
-    const { userId, vendorId, bookingDate, type, pincode, isSelfBooking } =
-      req.body;
+    const {
+      userId,
+      vendorId,
+      bookingDate,
+      type,
+      pincode,
+      isSelfBooking,
+      name,
+      phoneNo,
+      vill,
+      post,
+      dist,
+    } = req.body;
+
+    if (!userId || !vendorId || !bookingDate || !type || !pincode) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
     const formattedBookingDate = new Date(bookingDate).toDateString();
-    const bookedOn = new Date().toDateString();
+    const bookedOn = new Date();
     const bookingTime = Date.now();
 
-    const vendor = await Vendor.findById(vendorId).select("balance");
-    const vendorUser = await Vendor.findById(userId).select("bonusAmount");
-
-    if (isSelfBooking) {
-      const bookings = new Bookings({
+    // Handle self-booking case
+    if (isSelfBooking && userId === vendorId) {
+      const booking = new Bookings({
         userId,
         vendorId,
         bookingDate: formattedBookingDate,
         type,
         pincode,
         bookedOn,
+        bookingTime,
         cancelOrder: false,
         orderCompleted: false,
         rating: 0,
-        bookingTime,
+        ratingPermission: false,
+        name,
+        pincode,
+        phoneNo,
+        vill,
+        post,
+        dist,
       });
 
-      const result = await bookings.save();
-      return res.status(200).json({ bookingId: result._id });
+      const result = await booking.save();
+
+      await Vendor.findByIdAndUpdate(
+        vendorId,
+        {
+          $inc: { bookingCount: 1 },
+        },
+        { new: true }
+      );
+
+      return res.status(201).json({
+        message: "Self-booking created successfully",
+        bookingId: result._id,
+      });
     }
 
-    if (
-      !vendorUser ||
-      vendorUser.bonusAmount < 30 ||
-      !vendor ||
-      vendor.balance < 30
-    ) {
+    const vendor = await Vendor.findById(vendorId).select(
+      "balance commission phoneNo"
+    );
+    const vendorUser = await Vendor.findById(userId).select("bonusAmount");
+
+    if (!vendorUser || !vendor) {
       return res
-        .status(302)
-        .json({ message: "You don't have enough balance for booking" });
+        .status(404)
+        .json({ message: "Vendor or vendor user not found" });
     }
 
-    const bookings = new Bookings({
+    if (vendorUser.bonusAmount < 30 || vendor.balance < vendor.commission) {
+      return res
+        .status(402)
+        .json({ message: "Insufficient balance for booking" });
+    }
+
+    const booking = new Bookings({
       userId,
       vendorId,
       bookingDate: formattedBookingDate,
       type,
       pincode,
       bookedOn,
+      bookingTime,
       cancelOrder: false,
       orderCompleted: false,
       rating: 0,
-      bookingTime,
+      ratingPermission: false,
     });
 
-    const result = await bookings.save();
-    res.status(200).json({ bookingId: result._id });
+    const result = await booking.save();
+
+    // Update balances and stats
+    const updatedVendorUser = await Vendor.findByIdAndUpdate(
+      userId,
+      { $inc: { bonusAmount: -30, bookingCount: 1, pending: 1 } },
+      { new: true }
+    );
+
+    const discountData = await Vendor.findById(vendorId).select(
+      "totalDiscount transactionCount"
+    );
+
+    const averageDiscount =
+      (discountData.totalDiscount / discountData.transactionCount === 0
+        ? 1
+        : discountData.transactionCount) * 0.01;
+
+    await Vendor.findByIdAndUpdate(
+      vendorId,
+      {
+        $inc: {
+          balance: -vendor.commission * averageDiscount,
+          pendingVendor: 1,
+          bookingCountVendor: 1,
+        },
+      },
+      { new: true }
+    );
+    const booking1 = await Bookings.findById(result._id)
+      .populate({ path: "userId", model: "Vendor", select: "_id cd shareBy" })
+      .populate({ path: "vendorId", select: "_id cd shareBy commission" });
+
+    // Handle referral updates
+    console.log(booking1);
+    await handleReferralUpdates(booking1.userId._id, "vendor", "pending");
+    await handleReferralUpdates(booking1.vendorId._id, "vendor", "pending");
+
+    // Send notifications
+    if (userId != vendorId)
+      // try {
+      //   await axios.get(
+      //     `${
+      //       process.env.FAST2SMSBOOKING
+      //     }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
+      //       vendor.phoneNo
+      //     }&schedule_time=`
+      //   );
+
+      //   sendNotification(
+      //     vendor.fcmToken,
+      //     `...You are Booked...`,
+      //     `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
+      //     "booking"
+      //   );
+      // } catch (err) {
+      //   console.error("Notification failed", err);
+      // }
+
+      res.status(201).json({
+        message: "Booking created successfully",
+
+        bonusAmount: updatedVendorUser.bonusAmount,
+      });
   } catch (err) {
-    // Log the error for debugging
+    console.error("PostV booking error:", err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 exports.bookings_controller_get = async (req, res, next) => {
   try {
-    const userId = new ObjectId(req.params.userId);
-    const page = parseInt(req.params.pageNo) || 1; // Default to page 1 if not provided
-    const pageSize = 12; // Default page size to 12 if not provided
+    const userId = req.params.userId;
+    const page = parseInt(req.params.pageNo) || 1;
+    const pageSize = 12;
 
-    const currentDate = new Date().getTime();
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
 
-    // Calculate the total number of records to skip
-    const totalRecords = await Bookings.countDocuments({ userId });
-    const skip = Math.max(0, totalRecords - page * pageSize);
+    const skip = (page - 1) * pageSize;
 
-    const orders = await Bookings.aggregate([
-      {
-        $match: {
-          userId: userId,
-        },
-      },
-      {
-        $lookup: {
-          from: "vendors",
-          localField: "vendorId",
-          foreignField: "_id",
-          as: "vendor",
-        },
-      },
-      {
-        $addFields: {
-          bookingDateMillis: { $toLong: { $toDate: "$bookingDate" } }, // Convert bookingDate to milliseconds
-          currentDateMillis: currentDate, // Store current date in milliseconds
-        },
-      },
-      {
-        $project: {
-          bookingId: "$_id",
-          name: { $arrayElemAt: ["$vendor.name", 0] },
-          phoneNo: {
-            $cond: {
-              if: { $isArray: "$vendor.phoneNo" },
-              then: { $toString: { $arrayElemAt: ["$vendor.phoneNo", 0] } }, // Take the first element if it's an array
-              else: { $toString: "$vendor.phoneNo" }, // Convert to string if it's not an array
-            },
-          },
-          type: 1,
-          date: "$bookingDate",
-          cancelOrder: 1,
-          orderCompleted: 1,
-          rating: 1,
-        },
-      },
-      {
-        $project: {
-          bookingId: 1,
-          name: 1,
-          phoneNo: {
-            $cond: {
-              if: {
-                $and: [
-                  { $lt: ["$bookingDateMillis", "$currentDateMillis"] }, // Check if booking is in the past
-                  { $eq: ["$$ROOT.cancelOrder", false] }, // Additional condition: Check if cancelOrder is false
-                  { $eq: ["$rating", 0] },
-                ],
-              },
-              then: "$phoneNo",
+    const [bookings, totalCount] = await Promise.all([
+      Bookings.find({ userId: new ObjectId(userId) })
+        .populate("vendorId", "name phoneNo type")
+        .sort({ bookedOn: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .lean(),
 
-              else: {
-                $let: {
-                  vars: {
-                    len: { $strLenBytes: "$phoneNo" },
-                  },
-                  in: {
-                    $concat: [
-                      { $substrBytes: ["$phoneNo", 0, 2] },
-                      "******",
-                      {
-                        $substrBytes: [
-                          "$phoneNo",
-                          { $subtract: ["$$len", 2] },
-                          2,
-                        ],
-                      },
-                    ],
-                  },
-                },
-              },
-            },
-          },
-          type: 1,
-          date: 1,
-          cancelOrder: 1,
-          orderCompleted: 1,
-          rating: 1,
-        },
-      },
-      {
-        $skip: skip, // Skip records based on query parameter
-      },
-      {
-        $limit: pageSize, // Limit the number of records based on query parameter
-      },
+      Bookings.countDocuments({ userId: new ObjectId(userId) }),
     ]);
+
+    const currentTime = Date.now();
+    const formattedBookings = bookings.map((booking) => {
+      const isPastBooking =
+        new Date(booking.bookingDate).getTime() < currentTime;
+      const showFullPhone =
+        isPastBooking && !booking.cancelOrder && booking.rating === 0;
+
+      let phoneNo = booking.vendorId?.phoneNo?.toString() || "";
+      if (!showFullPhone && phoneNo) {
+        phoneNo = phoneNo.replace(/(\d{2})\d{6}(\d{2})/, "$1******$2");
+      }
+
+      return {
+        bookingId: booking._id,
+        name: booking.vendorId?.name || "Unknown",
+        phoneNo: phoneNo,
+        type: booking.type,
+        date: booking.bookingDate,
+        cancelOrder: booking.cancelOrder,
+        orderCompleted: booking.orderCompleted,
+        rating: booking.rating,
+      };
+    });
+
     res.json({
       page,
-      total: orders.length, // You may want to fetch the total count separately if needed
-      orders: orders,
+      pageSize,
+      total: totalCount,
+      totalPages: Math.ceil(totalCount / pageSize),
+      orders: formattedBookings,
     });
   } catch (err) {
+    console.error("Get bookings error:", err);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
+// Helper function for referral updates
+
+async function handleReferralUpdates(
+  entityId,
+  entityType,
+  action,
+  commission = 0,
+  averageDiscount = 0
+) {
+  try {
+    let entity;
+    if (entityType === "user") {
+      entity = await User.findById(entityId).select("cd shareBy");
+    } else {
+      entity = await Vendor.findById(entityId).select("cd shareBy");
+    }
+
+    if (!entity || !entity.shareBy) return;
+
+    let referrerModel;
+    switch (entity.cd) {
+      case "user":
+        referrerModel = User;
+        break;
+      case "vendor":
+        referrerModel = Vendor;
+        break;
+      default:
+        return;
+    }
+    console.log(averageDiscount);
+
+    const updateData = {};
+    if (action === "cancel") {
+      updateData.$inc = { pendingShareBy: -1, canceledShareBy: 1 };
+    } else if (action === "complete") {
+      const completedOrder =
+        entityType === "vendor"
+          ? await referrerModel.findById(entityId).completedVendor
+          : await referrerModel.findById(entityId).completed;
+      if (completedOrder > 5)
+        updateData.$inc = {
+          pendingShareBy: -1,
+          completedShareBy: 1,
+          earning: commission * 0.05 * averageDiscount,
+        };
+      else updateData.$inc = { pendingShareBy: -1, completedShareBy: 1 };
+    } else if (action === "pending") {
+      updateData.$inc = { pendingShareBy: 1 };
+    }
+
+    await referrerModel.findByIdAndUpdate(entity.shareBy, updateData);
+  } catch (error) {
+    console.error("Referral update error:", error);
+  }
+}
+
+// Helper function for notifications
+async function sendBookingNotification(
+  vendorId,
+  userName,
+  bookingDate,
+  bookingId,
+  action
+) {
+  try {
+    const vendor = await Vendor.findById(vendorId).select("fcmToken");
+    if (!vendor?.fcmToken) return;
+
+    const [date, month, year] = bookingDate.split("/");
+    const message =
+      action === "cancel"
+        ? `Cancelled by ${userName.toUpperCase()} for { ${date}/${month}/${year} }`
+        : `Booking Done by ${userName.toUpperCase()} on { ${date}/${month}/${year} }`;
+
+    const title =
+      action === "cancel"
+        ? "...You have been Cancelled..."
+        : "...You are Booked...";
+
+    sendNotification(
+      vendor.fcmToken,
+      title,
+      bookingId,
+      message,
+      action,
+      month,
+      year
+    );
+  } catch (error) {
+    console.error("Notification error:", error);
+  }
+}
+
 exports.bookings_controller_cancelU = async (req, res, next) => {
   try {
-    const bookingId = req.body.bookingId;
-    const cancelTime = Date.now();
+    const { bookingId } = req.body;
 
-    // Find the booking by ID
-    const booking = await Bookings.findById(bookingId);
+    if (!bookingId) {
+      return res.status(400).json({ message: "Booking ID is required" });
+    }
+
+    const booking = await Bookings.findById(bookingId)
+      .populate("userId", "name phoneNo cd shareBy")
+      .populate("vendorId", "name phoneNo cd shareBy commission fcmToken");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
-    const { orderCompleted, vendorId, userId, bookingDate } = booking;
-    const result = new Date(bookingDate);
-    const date = result.getDate().toString(); // Day of month (1-31)
-    const month = (result.getMonth() + 1).toString(); // Month (1-12)
-    const year = result.getFullYear().toString();
 
-    if (orderCompleted) {
-      return res.status(301).json({
+    if (booking.orderCompleted) {
+      return res.status(400).json({
         message: "You can't cancel this order. This is already completed",
       });
     }
 
-    // Update the booking to mark it as canceled
+    if (booking.cancelOrder) {
+      return res.status(400).json({
+        message: "This booking is already cancelled",
+      });
+    }
+
+    const cancelTime = Date.now();
+    const bookingDate = new Date(booking.bookingDate);
+    const formattedDate = `${bookingDate.getDate()}/${
+      bookingDate.getMonth() + 1
+    }/${bookingDate.getFullYear()}`;
+
+    // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(
       bookingId,
       { cancelOrder: true, cancelTime },
       { new: true }
     );
 
-    // Find the vendor by ID and update the booking status
-    const updatedVendor = await Vendor.findByIdAndUpdate(
-      vendorId,
-      {
-        $set: {
-          "bookings.$[elem].cancelOrder": true,
-          "bookings.$[elem].cancelTime": cancelTime,
-        },
-      },
-      { arrayFilters: [{ "elem.bookingId": bookingId }], new: true }
-    );
+    // Update user balance
 
-    // Update the vendor's balance
-    // const updatedVendorB = await Vendor.findByIdAndUpdate(
-    //   vendorId,
-    //   { $inc: { balance: 30 } }, // Increment balance by 30
-    //   { new: true }
-    // );
-
-    // Update the user's balance
     const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { $inc: { bonusAmount: 25 } }, // Increment balance by 25
+      booking.userId._id,
+      { $inc: { bonusAmount: 25, pending: -1, canceled: 1 } },
       { new: true }
     );
-    try {
-      sendNotification(
-        updatedVendor.fcmToken,
-        `...You are Canceled...`,
-        bookingId,
-        `Canceled by ${updatedUser.name.toUpperCase()} for { ${date}/${month}/${year} }`,
-        "cancelled",
-        month,
-        year
-      );
-    } catch (err) {
-      console.error("Notification failed", err);
-    }
 
-    return res.status(200).json({
-      message: "Order Canceled",
+    // Update vendor balance
+    await Vendor.findByIdAndUpdate(
+      booking.vendorId._id,
+      {
+        $inc: { pendingVendor: -1, canceledVendor: 1 },
+      },
+      { new: true }
+    );
+
+    // Handle referral updates
+    await handleReferralUpdates(booking.userId._id, "user", "cancel");
+    await handleReferralUpdates(booking.vendorId._id, "vendor", "cancel");
+
+    // Send notifications
+    // try {
+    //   await axios.get(
+    //     `${
+    //       process.env.FAST2SMSCANCEL
+    //     }variables_values=${booking.userId.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
+    //       booking.vendorId.phoneNo
+    //     }&schedule_time=`
+    //   );
+
+    //   await sendBookingNotification(
+    //     booking.vendorId._id,
+    //     booking.userId.name,
+    //     formattedDate,
+    //     bookingId,
+    //     "cancel"
+    //   );
+    // } catch (err) {
+    //   console.error("Notification failed", err);
+    // }
+
+    res.status(200).json({
+      message: "Order Cancelled successfully",
       bonusAmount: updatedUser.bonusAmount,
     });
   } catch (err) {
-    return res.status(500).json({ message: "Internal Server Error" });
+    console.error("CancelU error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 exports.bookings_controller_cancelV = async (req, res, next) => {
   try {
-    const bookingId = req.body.bookingId;
-    const cancelTime = Date.now();
+    const { bookingId } = req.body;
 
-    // Find the booking by ID
-    const booking = await Bookings.findById(bookingId);
+    if (!bookingId) {
+      return res.status(400).json({ message: "Booking ID is required" });
+    }
+
+    const booking = await Bookings.findById(bookingId)
+      .populate({ path: "userId", model: "Vendor", select: "_id cd shareBy" })
+      .populate("vendorId", "_id cd shareBy commission fcmToken");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const { orderCompleted, vendorId, userId, bookingDate } = booking;
-    const result = new Date(bookingDate);
-    const date = result.getDate().toString(); // Day of month (1-31)
-    const month = (result.getMonth() + 1).toString(); // Month (1-12)
-    const year = result.getFullYear().toString();
-    if (orderCompleted) {
-      return res.status(301).json({
+    if (booking.orderCompleted) {
+      return res.status(400).json({
         message: "You can't cancel this order. This is already completed",
       });
     }
 
-    // Update the booking to mark it as canceled
+    if (booking.cancelOrder) {
+      return res.status(400).json({
+        message: "This booking is already cancelled",
+      });
+    }
+
+    const cancelTime = Date.now();
+    const bookingDate = new Date(booking.bookingDate);
+    const formattedDate = `${bookingDate.getDate()}/${
+      bookingDate.getMonth() + 1
+    }/${bookingDate.getFullYear()}`;
+
+    // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(
       bookingId,
       { cancelOrder: true, cancelTime },
       { new: true }
     );
 
-    // Find the vendor by ID and update the booking status
-    const updatedVendor = await Vendor.findByIdAndUpdate(
-      vendorId,
-      {
-        $set: {
-          "bookings.$[elem].cancelOrder": true,
-          "bookings.$[elem].cancelTime": cancelTime,
-        },
-      },
-      { arrayFilters: [{ "elem.bookingId": bookingId }], new: true }
-    );
+    // Update vendor user balance
+    console.log(booking.userId._id);
 
-    // Update the vendor's balance
-    // const updatedVendorB = await Vendor.findByIdAndUpdate(
-    //   vendorId,
-    //   { $inc: { balance: 30 } }, // Increment balance by 30
-    //   { new: true }
-    // );
-
-    // Update the vendorUser's balance
+    // if (booking.userId._id === booking.vendorId._id) return;
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
-      userId,
-      { $inc: { bonusAmount: 25 } }, // Increment balance by 25
+      booking.userId._id,
+      { $inc: { bonusAmount: 25, pending: -1, canceled: 1 } },
       { new: true }
     );
-    try {
-      sendNotification(
-        updatedVendor.fcmToken,
-        `...You are Canceled...`,
-        bookingId,
-        `Canceled by ${updatedVendorUser.name.toUpperCase()} for { ${date}/${month}/${year} }`,
-        "cancelled",
-        month,
-        year
-      );
-    } catch (err) {
-      console.error("Notification failed", err);
-    }
 
-    return res
-      .status(200)
-      .json({ message: "Order Canceled", balance: updatedVendorUser.balance });
+    // Update vendor balance
+    await Vendor.findByIdAndUpdate(
+      booking.vendorId._id,
+      {
+        $inc: { pendingVendor: -1, canceledVendor: 1 },
+      },
+      { new: true }
+    );
+
+    // Handle referral updates
+    await handleReferralUpdates(booking.userId._id, "vendor", "cancel");
+    await handleReferralUpdates(booking.vendorId._id, "vendor", "cancel");
+
+    // Send notifications
+    // try {
+    //   await axios.get(
+    //     `${
+    //       process.env.FAST2SMSCANCEL
+    //     }variables_values=${updatedVendorUser.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
+    //       booking.vendorId.phoneNo
+    //     }&schedule_time=`
+    //   );
+
+    //   await sendBookingNotification(
+    //     booking.vendorId._id,
+    //     updatedVendorUser.name,
+    //     formattedDate,
+    //     bookingId,
+    //     "cancel"
+    //   );
+    // } catch (err) {
+    //   console.error("Notification failed", err);
+    // }
+
+    res.status(200).json({
+      message: "Order Cancelled successfully",
+      bonusAmount: updatedVendorUser.bonusAmount,
+    });
   } catch (err) {
-    return res.status(500).json({ message: "Internal Server Error" });
+    console.error("CancelV error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 exports.bookings_controller_completeU = async (req, res, next) => {
   try {
-    const bookingId = req.body.bookingId;
+    const { bookingId } = req.body;
 
-    // Find the booking by ID, including the vendor and user details
+    if (!bookingId) {
+      return res.status(400).json({ message: "Booking ID is required" });
+    }
+
     const booking = await Bookings.findById(bookingId)
-      .populate("vendorId")
-      .populate("userId");
+      .populate("userId", "_id cd shareBy")
+      .populate(
+        "vendorId",
+        "_id cd shareBy commission totalDiscount transactionCount"
+      );
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const { cancelOrder, bookingDate, vendorId, userId } = booking;
-
-    const bookingTime = new Date(bookingDate).getTime();
-    const currentTime = Date.now();
-
-    if (cancelOrder) {
-      return res.status(301).json({
+    if (booking.cancelOrder) {
+      return res.status(400).json({
         message:
           "You can't mark this Order as completed. This is already canceled",
       });
     }
 
-    if (currentTime <= bookingTime) {
-      return res.status(301).json({
-        message: `You can't mark this Order as completed before ${bookingDate}`,
+    if (booking.orderCompleted) {
+      return res.status(400).json({
+        message: "This booking is already completed",
       });
     }
 
-    // Update the booking to mark it as completed
+    const bookingTime = new Date(booking.bookingDate).getTime();
+    const currentTime = Date.now();
+
+    // if (currentTime <= bookingTime) {
+    //   return res.status(400).json({
+    //     message: `You can't mark this Order as completed before ${booking.bookingDate}`,
+    //   });
+    // }
+
+    // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(
       bookingId,
       { orderCompleted: true },
       { new: true }
     );
+    const discountData = await Vendor.findById(booking.vendorId._id).select(
+      "totalDiscount transactionCount"
+    );
+    const averageDiscount =
+      (discountData.totalDiscount / discountData.transactionCount === 0
+        ? 1
+        : discountData.transactionCount) * 0.01;
 
-    // Update the vendor's bookings array to reflect the completed status
-    const updatedVendor = await Vendor.findByIdAndUpdate(
-      vendorId,
-      { $set: { "bookings.$[elem].orderCompleted": true } },
-      { arrayFilters: [{ "elem.bookingId": bookingId }], new: true }
+    // Update user stats
+    await User.findByIdAndUpdate(booking.userId._id, {
+      $inc: { pending: -1, completed: 1 },
+    });
+
+    // Update vendor stats and earning
+    await Vendor.findByIdAndUpdate(booking.vendorId._id, {
+      $inc: {
+        pendingVendor: -1,
+        completedVendor: 1,
+      },
+    });
+
+    // Handle referral updates
+    await handleReferralUpdates(
+      booking.userId._id,
+      "user",
+      "complete",
+      booking.vendorId.commission,
+      averageDiscount
+    );
+    await handleReferralUpdates(
+      booking.vendorId._id,
+      "vendor",
+      "complete",
+      booking.vendorId.commission,
+      averageDiscount
     );
 
-    return res
-      .status(200)
-      .json({ message: "Marked as completed successfully" });
+    res.status(200).json({
+      message: "Booking marked as completed successfully",
+    });
   } catch (err) {
-    return res.status(500).json({ message: "Internal Server Error" });
+    console.error("CompleteU error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 exports.bookings_controller_completeV = async (req, res, next) => {
   try {
-    const bookingId = req.body.bookingId;
+    const { bookingId } = req.body;
 
-    // Find the booking by ID
-    const booking = await Bookings.findById(bookingId);
+    if (!bookingId) {
+      return res.status(400).json({ message: "Booking ID is required" });
+    }
+
+    const booking = await Bookings.findById(bookingId)
+      .populate({ path: "userId", model: "Vendor", select: "_id cd shareBy" })
+      .populate("vendorId", "_id cd shareBy commission");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const { cancelOrder, bookingDate, vendorId, userId } = booking;
-
-    const bookingTime = new Date(bookingDate).getTime();
-    const currentTime = Date.now();
-
-    if (cancelOrder) {
-      return res.status(301).json({
+    if (booking.cancelOrder) {
+      return res.status(400).json({
         message:
           "You can't mark this Order as completed. This is already canceled",
       });
     }
 
-    if (currentTime <= bookingTime) {
-      return res.status(301).json({
-        message: `You can't mark this Order as completed before ${bookingDate}`,
+    if (booking.orderCompleted) {
+      return res.status(400).json({
+        message: "This booking is already completed",
       });
     }
 
-    // Update the booking to mark it as completed
+    const bookingTime = new Date(booking.bookingDate).getTime();
+    const currentTime = Date.now();
+
+    // if (currentTime <= bookingTime) {
+    //   return res.status(400).json({
+    //     message: `You can't mark this Order as completed before ${booking.bookingDate}`,
+    //   });
+    // }
+
+    // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(
       bookingId,
       { orderCompleted: true },
       { new: true }
     );
 
-    // Find the vendor by ID and update the booking status
-    const updatedVendor = await Vendor.findByIdAndUpdate(
-      vendorId,
-      { $set: { "bookings.$[elem].orderCompleted": true } },
-      { arrayFilters: [{ "elem.bookingId": bookingId }], new: true }
+    // Skip if same ID (self booking)
+    if (booking.userId._id.toString() === booking.vendorId._id.toString()) {
+      return res
+        .status(200)
+        .json({ message: "Self booking completed, no vendor update required" });
+    }
+    const discountData = await Vendor.findById(booking.vendorId._id).select(
+      "totalDiscount transactionCount"
+    );
+    const averageDiscount =
+      (discountData.totalDiscount / discountData.transactionCount === 0
+        ? 1
+        : discountData.transactionCount) * 0.01;
+
+    // Update vendor user stats
+    await Vendor.findByIdAndUpdate(booking.userId._id, {
+      $inc: { pending: -1, completed: 1 },
+    });
+
+    // Update vendor stats and earning
+    await Vendor.findByIdAndUpdate(booking.vendorId._id, {
+      $inc: {
+        pendingVendor: -1,
+        completedVendor: 1,
+      },
+    });
+
+    // Handle referral updates
+    await handleReferralUpdates(
+      booking.userId._id,
+      "vendor",
+      "complete",
+      booking.vendorId.commission,
+      averageDiscount
+    );
+    await handleReferralUpdates(
+      booking.vendorId._id,
+      "vendor",
+      "complete",
+      booking.vendorId.commission,
+      averageDiscount
     );
 
-    return res
-      .status(200)
-      .json({ message: "Marked as completed successfully" });
+    res.status(200).json({
+      message: "Booking marked as completed successfully",
+    });
   } catch (err) {
-    return res.status(500).json({ message: "Internal Server Error" });
+    console.error("CompleteV error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
+// Common rating function for both user and vendor
+async function handleRating(bookingId, rating) {
+  const booking = await Bookings.findById(bookingId);
+  if (!booking) {
+    throw new Error("Booking not found");
+  }
+
+  const { ratingPermission, vendorId, bookingDate } = booking;
+  const currentTime = Date.now();
+  const bookingTime = new Date(bookingDate).getTime();
+  const timeDifference = Math.floor(
+    (currentTime - bookingTime) / (1000 * 60 * 60)
+  );
+
+  if (
+    !(currentTime > bookingTime && timeDifference > 16) &&
+    !ratingPermission
+  ) {
+    throw new Error(`You can't rate before 5pm of ${bookingDate}`);
+  }
+
+  // Update booking rating
+  const updatedBooking = await Bookings.findByIdAndUpdate(
+    bookingId,
+    { rating },
+    { new: true }
+  );
+
+  // Calculate new average rating for vendor
+  const vendorBookings = await Bookings.find({
+    vendorId,
+    rating: { $gt: 0 },
+  });
+
+  const ratingCount = vendorBookings.length;
+  const totalRating = vendorBookings.reduce(
+    (acc, curr) => acc + curr.rating,
+    0
+  );
+  const averageRating = ratingCount
+    ? Math.round((totalRating / ratingCount) * 100) / 100
+    : 0;
+
+  // Update vendor rating
+  const updatedVendor = await Vendor.findByIdAndUpdate(
+    vendorId,
+    {
+      rating: averageRating,
+      ratingCount: ratingCount,
+    },
+    { new: true }
+  );
+
+  return { message: "Thanks for your rating!" };
+}
 
 exports.bookings_controller_ratingV = async (req, res, next) => {
   try {
     const { bookingId, rating } = req.body;
 
-    const booking = await Bookings.findById(bookingId);
-    if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
-
-    const { ratingPermission, vendorId, bookingDate } = booking;
-    const currentTime = Date.now();
-    const bookingTime = new Date(bookingDate).getTime();
-    const timeDifference = Math.floor(
-      (currentTime - bookingTime) / (1000 * 60 * 60)
-    );
-
-    if (
-      !(currentTime > bookingTime && timeDifference > 16) &&
-      !ratingPermission
-    ) {
+    if (!bookingId || !rating) {
       return res
-        .status(301)
-        .json({ message: `You can't rate before 5pm of ${bookingDate}` });
+        .status(400)
+        .json({ message: "Booking ID and rating are required" });
     }
 
-    const updatedBooking = await Bookings.findByIdAndUpdate(
-      bookingId,
-      { rating },
-      { new: true }
-    );
+    if (rating < 1 || rating > 5) {
+      return res
+        .status(400)
+        .json({ message: "Rating must be between 1 and 5" });
+    }
 
-    const vendor = await Vendor.findById(vendorId);
-    const index = vendor.bookings.findIndex(
-      (data) => data.bookingId == bookingId
-    );
-    vendor.bookings[index].rating = rating;
-
-    const validRatings = vendor.bookings.filter((data) => data.rating > 0);
-    const ratingCount = validRatings.length;
-    const totalRating = validRatings.reduce(
-      (acc, curr) => acc + curr.rating,
-      0
-    );
-    const averageRating = ratingCount
-      ? Math.round((totalRating / ratingCount) * 100) / 100
-      : 0;
-
-    const updatedVendor = await Vendor.findByIdAndUpdate(
-      vendorId,
-      {
-        $set: {
-          "bookings.$[elem].rating": rating,
-          rating: averageRating,
-          ratingCount: ratingCount,
-        },
-      },
-      {
-        new: true,
-        arrayFilters: [{ "elem.bookingId": bookingId }],
-      }
-    );
-
-    return res.status(200).json({ message: "Thanks for Rating Me..." });
+    const result = await handleRating(bookingId, rating);
+    res.status(200).json(result);
   } catch (err) {
-    return res.status(500).json({ message: "Internal Server Error" });
+    if (err.message.includes("can't rate")) {
+      return res.status(400).json({ message: err.message });
+    }
+    console.error("RatingV error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
@@ -543,67 +899,26 @@ exports.bookings_controller_ratingU = async (req, res, next) => {
   try {
     const { bookingId, rating } = req.body;
 
-    const booking = await Bookings.findById(bookingId);
-    if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
-
-    const { ratingPermission, vendorId, bookingDate } = booking;
-    const currentTime = Date.now();
-    const bookingTime = new Date(bookingDate).getTime();
-    const timeDifference = Math.floor(
-      (currentTime - bookingTime) / (1000 * 60 * 60)
-    );
-
-    if (
-      !(currentTime > bookingTime && timeDifference > 16) &&
-      !ratingPermission
-    ) {
+    if (!bookingId || !rating) {
       return res
-        .status(301)
-        .json({ message: `You can't rate before 5pm of ${bookingDate}` });
+        .status(400)
+        .json({ message: "Booking ID and rating are required" });
     }
 
-    const updatedBooking = await Bookings.findByIdAndUpdate(
-      bookingId,
-      { rating },
-      { new: true }
-    );
+    if (rating < 1 || rating > 5) {
+      return res
+        .status(400)
+        .json({ message: "Rating must be between 1 and 5" });
+    }
 
-    const vendor = await Vendor.findById(vendorId);
-    const index = vendor.bookings.findIndex(
-      (data) => data.bookingId == bookingId
-    );
-    vendor.bookings[index].rating = rating;
-
-    const validRatings = vendor.bookings.filter((data) => data.rating > 0);
-    const ratingCount = validRatings.length;
-    const totalRating = validRatings.reduce(
-      (acc, curr) => acc + curr.rating,
-      0
-    );
-    const averageRating = ratingCount
-      ? Math.round((totalRating / ratingCount) * 100) / 100
-      : 0;
-
-    const updatedVendor = await Vendor.findByIdAndUpdate(
-      vendorId,
-      {
-        $set: {
-          "bookings.$[elem].rating": rating,
-          rating: averageRating,
-          ratingCount: ratingCount,
-        },
-      },
-      {
-        new: true,
-        arrayFilters: [{ "elem.bookingId": bookingId }],
-      }
-    );
-
-    return res.status(200).json({ message: "Thanks for Rating Me..." });
+    const result = await handleRating(bookingId, rating);
+    res.status(200).json(result);
   } catch (err) {
-    return res.status(500).json({ message: "Internal Server Error" });
+    if (err.message.includes("can't rate")) {
+      return res.status(400).json({ message: err.message });
+    }
+    console.error("RatingU error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
@@ -611,18 +926,21 @@ exports.bookings_controller_ratingPermission = async (req, res, next) => {
   try {
     const { bookingId } = req.body;
 
+    if (!bookingId) {
+      return res.status(400).json({ message: "Booking ID is required" });
+    }
+
     const booking = await Bookings.findById(bookingId);
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const { bookingDate } = booking;
+    const bookingTime = new Date(booking.bookingDate).getTime();
     const currentTime = Date.now();
-    const bookingTime = new Date(bookingDate).getTime();
 
     if (currentTime <= bookingTime) {
-      return res.status(300).json({
-        message: `You can't grant rating permission before ${bookingDate}`,
+      return res.status(400).json({
+        message: `You can't grant rating permission before ${booking.bookingDate}`,
       });
     }
 
@@ -632,14 +950,12 @@ exports.bookings_controller_ratingPermission = async (req, res, next) => {
       { new: true }
     );
 
-    if (!updatedBooking) {
-      return res.status(500).json({ message: "Failed to update booking" });
-    }
-
-    return res
-      .status(200)
-      .json({ message: "Rating Permission granted", isPermissonGranted: true });
+    res.status(200).json({
+      message: "Rating permission granted successfully",
+      isPermissonGranted: true,
+    });
   } catch (err) {
-    return res.status(500).json({ message: "Internal Server Error" });
+    console.error("Rating permission error:", err);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 };
