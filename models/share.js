@@ -2,12 +2,21 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
 const shareSchema = new Schema({
-  userId: { type: Schema.Types.ObjectId, ref: "User" },
-  vendorId: { type: Schema.Types.ObjectId, ref: "Vendor" },
-  employeeId: { type: Schema.Types.ObjectId, ref: "Employee" },
-  status: {type:String,default:'pending'},
-  phoneNo: Number,
-  shareDate: Date,
+  userId: { type: Schema.Types.ObjectId, ref: "User", index: true }, // who shared
+  vendorId: { type: Schema.Types.ObjectId, ref: "Vendor", index: true }, // which vendor was shared
+  employeeId: { type: Schema.Types.ObjectId, ref: "Employee", index: true }, // optional - if shared by internal team
+  phoneNo: { type: Number, index: true }, // for quick lookups by phone number
+  status: {
+    type: String,
+    enum: ["pending", "accepted", "rejected", "completed"],
+    default: "pending",
+  },
+  shareDate: { type: Date, default: Date.now, index: true },
 });
+
+// // compound indexes for analytics & performance
+// shareSchema.index({ userId: 1, vendorId: 1 });
+// shareSchema.index({ vendorId: 1, status: 1 });
+// shareSchema.index({ phoneNo: 1, status: 1 });
 
 module.exports = mongoose.model("Share", shareSchema);

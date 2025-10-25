@@ -41,11 +41,7 @@ router.patch(
   is_user,
   user_controller.user_controller_patch_email
 );
-router.patch(
-  "/edit/phoneNo",
-  is_user,
-  user_controller.user_controller_patch_phoneNo
-);
+
 router.patch(
   "/update/address",
   is_user,
@@ -53,7 +49,7 @@ router.patch(
 );
 
 router.get(
-  "/getOrders/:userId",
+  "/getOrders/:userId/:pageNo",
   is_user,
   user_controller.user_controller_getOrders
 );
@@ -74,5 +70,10 @@ router.get(
 /////////////////////
 
 router.get("/getOne", is_vendor, user_controller.user_controller_getOne);
+router.get(
+  "/getEarnings/:userId",
+  is_user,
+  user_controller.user_controller_getEarnings
+);
 
 module.exports = router;

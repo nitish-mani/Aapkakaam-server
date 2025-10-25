@@ -53,11 +53,7 @@ router.patch(
   is_vendor,
   vendor_controller.vendor_controller_patch_fcmToken
 );
-router.patch(
-  "/edit/phoneNo",
-  is_vendor,
-  vendor_controller.vendor_controller_patch_phoneNo
-);
+
 router.patch(
   "/edit/email",
   is_vendor,
@@ -83,7 +79,7 @@ router.get(
 );
 
 router.get(
-  "/getOrders/:vendorId",
+  "/getOrders/:vendorId/:pageNo",
   is_vendor,
   vendor_controller.vendor_controller_getOrders
 );
@@ -112,17 +108,23 @@ router.patch(
 router.get(
   "/getAll/:type/:pincode/:bookingDate/:page/:minRating/:minWageRate",
   is_user,
-  vendor_controller.vendor_controller_getAll
+  vendor_controller.vendor_controller_getAvailableVendor
 );
 router.get(
   "/getAllV/:type/:pincode/:bookingDate/:page/:minRating/:minWageRate",
   is_vendor,
-  vendor_controller.vendor_controller_getAll
+  vendor_controller.vendor_controller_getAvailableVendor
 );
 router.get(
   "/getOne/:vendorId",
   is_user,
   vendor_controller.vendor_controller_getOne
+);
+
+router.get(
+  "/getEarnings/:vendorId",
+  is_vendor,
+  vendor_controller.vendor_controller_getEarnings
 );
 
 module.exports = router;

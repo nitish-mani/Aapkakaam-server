@@ -17,10 +17,7 @@ function sendNotification(token, title, id, body, type, month, year) {
       // Custom payload data
       click_action: "FLUTTER_NOTIFICATION_CLICK",
       screen: "profile",
-      id: id,
       type: type,
-      month: month,
-      year: year,
     },
     token: token, // The FCM token of the target device
   };
