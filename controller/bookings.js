@@ -87,24 +87,24 @@ exports.bookings_controller_postU = async (req, res, next) => {
     await handleReferralUpdates(booking1.vendorId._id, "vendor", "pending");
 
     // Send notifications
-    // try {
-    //   await axios.get(
-    //     `${
-    //       process.env.FAST2SMSBOOKING
-    //     }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
-    //       vendor.phoneNo
-    //     }&schedule_time=`
-    //   );
+    try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSBOOKING
+        }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
+          vendor.phoneNo
+        }&schedule_time=`
+      );
 
-    //   sendNotification(
-    //     vendor.fcmToken,
-    //     `...You are Booked...`,
-    //     `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
-    //     "booking"
-    //   );
-    // } catch (err) {
-    //   console.error("Notification failed", err);
-    // }
+      sendNotification(
+        vendor.fcmToken,
+        `...You are Booked...`,
+        `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
+        "booking"
+      );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
     res.status(201).json({
       message: "Booking created successfully",
@@ -244,30 +244,29 @@ exports.bookings_controller_postV = async (req, res, next) => {
       .populate({ path: "vendorId", select: "_id cd shareBy commission" });
 
     // Handle referral updates
-    console.log(booking1);
     await handleReferralUpdates(booking1.userId._id, "vendor", "pending");
     await handleReferralUpdates(booking1.vendorId._id, "vendor", "pending");
 
     // Send notifications
     if (userId != vendorId)
-      // try {
-      //   await axios.get(
-      //     `${
-      //       process.env.FAST2SMSBOOKING
-      //     }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
-      //       vendor.phoneNo
-      //     }&schedule_time=`
-      //   );
+      try {
+        await axios.get(
+          `${
+            process.env.FAST2SMSBOOKING
+          }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
+            vendor.phoneNo
+          }&schedule_time=`
+        );
 
-      //   sendNotification(
-      //     vendor.fcmToken,
-      //     `...You are Booked...`,
-      //     `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
-      //     "booking"
-      //   );
-      // } catch (err) {
-      //   console.error("Notification failed", err);
-      // }
+        sendNotification(
+          vendor.fcmToken,
+          `...You are Booked...`,
+          `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
+          "booking"
+        );
+      } catch (err) {
+        console.error("Notification failed", err);
+      }
 
       res.status(201).json({
         message: "Booking created successfully",
@@ -496,26 +495,26 @@ exports.bookings_controller_cancelU = async (req, res, next) => {
     await handleReferralUpdates(booking.userId._id, "user", "cancel");
     await handleReferralUpdates(booking.vendorId._id, "vendor", "cancel");
 
-    // Send notifications
-    // try {
-    //   await axios.get(
-    //     `${
-    //       process.env.FAST2SMSCANCEL
-    //     }variables_values=${booking.userId.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
-    //       booking.vendorId.phoneNo
-    //     }&schedule_time=`
-    //   );
+   // Send notifications
+    try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSCANCEL
+        }variables_values=${booking.userId.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
+          booking.vendorId.phoneNo
+        }&schedule_time=`
+      );
 
-    //   await sendBookingNotification(
-    //     booking.vendorId._id,
-    //     booking.userId.name,
-    //     formattedDate,
-    //     bookingId,
-    //     "cancel"
-    //   );
-    // } catch (err) {
-    //   console.error("Notification failed", err);
-    // }
+      await sendBookingNotification(
+        booking.vendorId._id,
+        booking.userId.name,
+        formattedDate,
+        bookingId,
+        "cancel"
+      );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
     res.status(200).json({
       message: "Order Cancelled successfully",
@@ -591,26 +590,26 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
     await handleReferralUpdates(booking.userId._id, "vendor", "cancel");
     await handleReferralUpdates(booking.vendorId._id, "vendor", "cancel");
 
-    // Send notifications
-    // try {
-    //   await axios.get(
-    //     `${
-    //       process.env.FAST2SMSCANCEL
-    //     }variables_values=${updatedVendorUser.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
-    //       booking.vendorId.phoneNo
-    //     }&schedule_time=`
-    //   );
+   // Send notifications
+    try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSCANCEL
+        }variables_values=${updatedVendorUser.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
+          booking.vendorId.phoneNo
+        }&schedule_time=`
+      );
 
-    //   await sendBookingNotification(
-    //     booking.vendorId._id,
-    //     updatedVendorUser.name,
-    //     formattedDate,
-    //     bookingId,
-    //     "cancel"
-    //   );
-    // } catch (err) {
-    //   console.error("Notification failed", err);
-    // }
+      await sendBookingNotification(
+        booking.vendorId._id,
+        updatedVendorUser.name,
+        formattedDate,
+        bookingId,
+        "cancel"
+      );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
     res.status(200).json({
       message: "Order Cancelled successfully",
@@ -657,11 +656,11 @@ exports.bookings_controller_completeU = async (req, res, next) => {
     const bookingTime = new Date(booking.bookingDate).getTime();
     const currentTime = Date.now();
 
-    // if (currentTime <= bookingTime) {
-    //   return res.status(400).json({
-    //     message: `You can't mark this Order as completed before ${booking.bookingDate}`,
-    //   });
-    // }
+    if (currentTime <= bookingTime) {
+      return res.status(400).json({
+        message: `You can't mark this Order as completed before ${booking.bookingDate}`,
+      });
+    }
 
     // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(
@@ -747,11 +746,11 @@ exports.bookings_controller_completeV = async (req, res, next) => {
     const bookingTime = new Date(booking.bookingDate).getTime();
     const currentTime = Date.now();
 
-    // if (currentTime <= bookingTime) {
-    //   return res.status(400).json({
-    //     message: `You can't mark this Order as completed before ${booking.bookingDate}`,
-    //   });
-    // }
+    if (currentTime <= bookingTime) {
+      return res.status(400).json({
+        message: `You can't mark this Order as completed before ${booking.bookingDate}`,
+      });
+    }
 
     // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(

@@ -6,6 +6,7 @@ const OtpAuth = require("../models/otpAuth");
 const bcrypt = require("bcryptjs");
 const Share = require("../models/share");
 const Bookings = require("../models/bookings");
+const Attendance = require("../models/attendance");
 require("dotenv").config();
 
 const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
@@ -129,7 +130,7 @@ exports.user_controller_verify_phoneNo = async (req, res, next) => {
     const result = await otpRecord.save();
 
     const smsResponse = await axios.get(
-      `${process.env.FAST2SMS}?route=otp&variables_values=${otpM}&flash=0&numbers=${phoneNo}`
+      `${process.env.FAST2SMS}variables_values=${otpM}&flash=0&numbers=${phoneNo}&schedule_time=`
     );
 
     res.status(200).json({
@@ -595,6 +596,146 @@ exports.user_controller_getEarnings = async (req, res, next) => {
     res.json(result);
   } catch (err) {
     console.error("Get one user error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
+};
+
+exports.user_controller_getAttendance = async (req, res, next) => {
+  try {
+    const { useId, month, year } = req.params;
+
+    if (!useId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+
+    if (!month || !year) {
+      return res.status(400).json({ message: "Month and year are required" });
+    }
+
+    // Convert month and year to numbers
+    const monthNum = parseInt(month);
+    const yearNum = parseInt(year);
+
+    // Validate month and year
+    if (monthNum < 1 || monthNum > 12) {
+      return res
+        .status(400)
+        .json({ message: "Month must be between 1 and 12" });
+    }
+
+    if (yearNum < 2000 || yearNum > 2100) {
+      return res
+        .status(400)
+        .json({ message: "Year must be between 2000 and 2100" });
+    }
+
+    // Format month to have leading zero if needed (for string comparison with presentDate)
+    const formattedMonth = monthNum.toString().padStart(2, "0");
+
+    // Create a regex pattern to match dates in the format YYYY-MM-DD for the specific month and year
+    // This will match dates like "2024-01-01", "2024-01-15", etc. for January 2024
+    const datePattern = new RegExp(`^${yearNum}-${formattedMonth}-\\d{2}$`);
+
+    // Find attendance records for the vendor within the specified month and year
+    const attendanceRecords = await Attendance.find({
+      useId: new mongoose.Types.ObjectId(useId),
+      presentDate: datePattern,
+    })
+      .populate("userId", "name email") // Populate user details if needed
+      .populate("useId", "vendorName") // Populate vendor details if needed
+      .sort({ presentDate: 1 }) // Sort by date ascending
+      .lean();
+
+    if (!attendanceRecords || attendanceRecords.length === 0) {
+      return res.status(404).json({
+        message: `No attendance records found for vendor ${useId} in ${month}/${year}`,
+        data: [],
+        summary: {
+          totalRecords: 0,
+          presentDays: 0,
+          absentDays: 0,
+          totalTime: 0,
+          month: monthNum,
+          year: yearNum,
+          period: `${yearNum}-${formattedMonth}`,
+        },
+      });
+    }
+
+    // Calculate summary statistics
+    const summary = {
+      totalRecords: attendanceRecords.length,
+      presentDays: attendanceRecords.filter(
+        (record) => record.attendance === true
+      ).length,
+      absentDays: attendanceRecords.filter(
+        (record) => record.attendance === false
+      ).length,
+      totalTime: attendanceRecords.reduce(
+        (total, record) => total + (record.totalTime || 0),
+        0
+      ),
+      pageNo1Completed: attendanceRecords.filter(
+        (record) => record.pageNo1 === true
+      ).length,
+      pageNo2Completed: attendanceRecords.filter(
+        (record) => record.pageNo2 === true
+      ).length,
+      pageNo3Completed: attendanceRecords.filter(
+        (record) => record.pageNo3 === true
+      ).length,
+      month: monthNum,
+      year: yearNum,
+      period: `${yearNum}-${formattedMonth}`,
+    };
+
+    // Calculate average time per day (in minutes)
+    summary.averageTimePerDay =
+      summary.presentDays > 0
+        ? Math.round(summary.totalTime / summary.presentDays)
+        : 0;
+
+    res.json({
+      message: "Attendance records retrieved successfully",
+      data: attendanceRecords,
+      summary: summary,
+    });
+  } catch (err) {
+    console.error("Get vendor attendance error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
+};
+
+exports.user_controller_postAttendance = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { attendanceData } = req.body;
+    const totalTime =
+      attendanceData.time1 + attendanceData.time2 + attendanceData.time3;
+    if (!userId) {
+      return res.status(400).json({ message: "Vendor ID is required" });
+    }
+    const attendance = new Attendance({
+      userId: userId,
+      attendance: true,
+      totalTime: totalTime,
+      presentDate: Date.now(),
+      pageNo1: true,
+      pageNo2: true,
+      pageNo3: true,
+      attendanceData,
+    });
+    const result = await attendance.save();
+
+    res.json({ message: "Attendance saved successfully." });
+  } catch (err) {
+    console.error("Attendance error:", err);
     if (!err.statusCode) {
       err.statusCode = 500;
     }

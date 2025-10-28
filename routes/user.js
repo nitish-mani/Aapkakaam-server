@@ -76,4 +76,14 @@ router.get(
   user_controller.user_controller_getEarnings
 );
 
+router.get(
+  "/getAttendance/:userId/:month/:year",
+  is_user,
+  user_controller.user_controller_getAttendance
+);
+router.post(
+  "/postAttendance/:userId",
+  is_user,
+  user_controller.user_controller_postAttendance
+);
 module.exports = router;
