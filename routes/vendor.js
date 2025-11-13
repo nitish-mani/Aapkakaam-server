@@ -126,5 +126,15 @@ router.get(
   is_vendor,
   vendor_controller.vendor_controller_getEarnings
 );
+router.get(
+  "/getAttendance/:vendorId/:month/:year",
+  is_vendor,
+  vendor_controller.vendor_controller_getAttendance
+);
+router.post(
+  "/postAttendance/:vendorId",
+  is_vendor,
+  vendor_controller.vendor_controller_postAttendance
+);
 
 module.exports = router;

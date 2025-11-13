@@ -12,6 +12,21 @@ exports.bookings_controller_postU = async (req, res, next) => {
     if (!userId || !vendorId || !bookingDate || !type || !pincode) {
       return res.status(400).json({ message: "All fields are required" });
     }
+    const isVendorBooked = await Bookings.exists({
+      vendorId: vendorId, // The vendor you want to check
+      type,
+      pincode,
+      bookingDate,
+      cancelOrder: false,
+      orderCompleted: false,
+    });
+
+    // If isVendorBooked is truthy, then the vendor is already booked
+    if (isVendorBooked) {
+      return res
+        .status(400)
+        .json({ message: "Vendor is already booked for this date" });
+    }
 
     const formattedBookingDate = new Date(bookingDate).toDateString();
     const bookedOn = new Date();
@@ -20,13 +35,17 @@ exports.bookings_controller_postU = async (req, res, next) => {
     const vendor = await Vendor.findById(vendorId).select(
       "balance commission phoneNo"
     );
-    const user = await User.findById(userId).select("bonusAmount");
+    const user = await User.findById(userId).select("bonusAmount balance");
 
     if (!user || !vendor) {
       return res.status(404).json({ message: "User or vendor not found" });
     }
 
-    if (user.bonusAmount < 30 || vendor.balance < vendor.commission) {
+    if (
+      user.bonusAmount < 30 ||
+      user.balance < 1 ||
+      vendor.balance < vendor.commission
+    ) {
       return res
         .status(402)
         .json({ message: "Insufficient balance for booking" });
@@ -48,11 +67,26 @@ exports.bookings_controller_postU = async (req, res, next) => {
 
     const result = await booking.save();
 
+    const discountDataU = await User.findById(userId).select(
+      "totalDiscount transactionCount"
+    );
+
+    const averageDiscountU =
+      (discountDataU.totalDiscount / discountDataU.transactionCount === 0
+        ? 1
+        : discountDataU.transactionCount) * 0.01;
+    const av = 1 - averageDiscountU;
+    const balance = -1 * av;
     // Update user and vendor stats
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
-        $inc: { bonusAmount: -30, bookingCount: 1, pending: 1 },
+        $inc: {
+          bonusAmount: -29,
+          balance: balance,
+          bookingCount: 1,
+          pending: 1,
+        },
       },
       { new: true }
     );
@@ -65,12 +99,13 @@ exports.bookings_controller_postU = async (req, res, next) => {
       (discountData.totalDiscount / discountData.transactionCount === 0
         ? 1
         : discountData.transactionCount) * 0.01;
-
+    const av1 = 1 - averageDiscount;
+    const balance1 = -vendor.commission * av1;
     await Vendor.findByIdAndUpdate(
       vendorId,
       {
         $inc: {
-          balance: -vendor.commission * averageDiscount,
+          balance: balance1,
           pendingVendor: 1,
           bookingCountVendor: 1,
         },
@@ -87,28 +122,28 @@ exports.bookings_controller_postU = async (req, res, next) => {
     await handleReferralUpdates(booking1.vendorId._id, "vendor", "pending");
 
     // Send notifications
-    // try {
-    //   await axios.get(
-    //     `${
-    //       process.env.FAST2SMSBOOKING
-    //     }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
-    //       vendor.phoneNo
-    //     }&schedule_time=`
-    //   );
+    try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSBOOKING
+        }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
+          vendor.phoneNo
+        }&schedule_time=`
+      );
 
-    //   sendNotification(
-    //     vendor.fcmToken,
-    //     `...You are Booked...`,
-    //     `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
-    //     "booking"
-    //   );
-    // } catch (err) {
-    //   console.error("Notification failed", err);
-    // }
+      //   sendNotification(
+      //     vendor.fcmToken,
+      //     `...You are Booked...`,
+      //     `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
+      //     "booking"
+      //   );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
     res.status(201).json({
       message: "Booking created successfully",
-
+      balance: updatedUser.balance,
       bonusAmount: updatedUser.bonusAmount,
     });
   } catch (err) {
@@ -135,6 +170,22 @@ exports.bookings_controller_postV = async (req, res, next) => {
 
     if (!userId || !vendorId || !bookingDate || !type || !pincode) {
       return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const isVendorBooked = await Bookings.exists({
+      vendorId: vendorId, // The vendor you want to check
+      type,
+      pincode,
+      bookingDate,
+      cancelOrder: false,
+      orderCompleted: false,
+    });
+
+    // If isVendorBooked is truthy, then the vendor is already booked
+    if (isVendorBooked) {
+      return res
+        .status(400)
+        .json({ message: "Vendor is already booked for this date" });
     }
 
     const formattedBookingDate = new Date(bookingDate).toDateString();
@@ -182,7 +233,9 @@ exports.bookings_controller_postV = async (req, res, next) => {
     const vendor = await Vendor.findById(vendorId).select(
       "balance commission phoneNo"
     );
-    const vendorUser = await Vendor.findById(userId).select("bonusAmount");
+    const vendorUser = await Vendor.findById(userId).select(
+      "bonusAmount balance"
+    );
 
     if (!vendorUser || !vendor) {
       return res
@@ -190,7 +243,11 @@ exports.bookings_controller_postV = async (req, res, next) => {
         .json({ message: "Vendor or vendor user not found" });
     }
 
-    if (vendorUser.bonusAmount < 30 || vendor.balance < vendor.commission) {
+    if (
+      vendorUser.bonusAmount < 30 ||
+      vendorUser.balance < 1 ||
+      vendor.balance < vendor.commission
+    ) {
       return res
         .status(402)
         .json({ message: "Insufficient balance for booking" });
@@ -212,10 +269,27 @@ exports.bookings_controller_postV = async (req, res, next) => {
 
     const result = await booking.save();
 
+    const discountDataUV = await Vendor.findById(userId).select(
+      "totalDiscount transactionCount"
+    );
+
+    const averageDiscountUV =
+      (discountDataUV.totalDiscount / discountDataUV.transactionCount === 0
+        ? 1
+        : discountDataUV.transactionCount) * 0.01;
+    const av = 1 - averageDiscountUV;
+    const balance = -1 * av;
     // Update balances and stats
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
       userId,
-      { $inc: { bonusAmount: -30, bookingCount: 1, pending: 1 } },
+      {
+        $inc: {
+          bonusAmount: -29,
+          balance: balance,
+          bookingCount: 1,
+          pending: 1,
+        },
+      },
       { new: true }
     );
 
@@ -227,12 +301,13 @@ exports.bookings_controller_postV = async (req, res, next) => {
       (discountData.totalDiscount / discountData.transactionCount === 0
         ? 1
         : discountData.transactionCount) * 0.01;
-
+    const av1 = 1 - averageDiscount;
+    const balance1 = -vendor.commission * av1;
     await Vendor.findByIdAndUpdate(
       vendorId,
       {
         $inc: {
-          balance: -vendor.commission * averageDiscount,
+          balance: balance1,
           pendingVendor: 1,
           bookingCountVendor: 1,
         },
@@ -244,36 +319,35 @@ exports.bookings_controller_postV = async (req, res, next) => {
       .populate({ path: "vendorId", select: "_id cd shareBy commission" });
 
     // Handle referral updates
-    console.log(booking1);
     await handleReferralUpdates(booking1.userId._id, "vendor", "pending");
     await handleReferralUpdates(booking1.vendorId._id, "vendor", "pending");
 
     // Send notifications
     if (userId != vendorId)
-      // try {
-      //   await axios.get(
-      //     `${
-      //       process.env.FAST2SMSBOOKING
-      //     }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
-      //       vendor.phoneNo
-      //     }&schedule_time=`
-      //   );
+      try {
+        await axios.get(
+          `${
+            process.env.FAST2SMSBOOKING
+          }variables_values=${name.toUpperCase()}%7C${formattedBookingDate}%7C&flash=1&numbers=${
+            vendor.phoneNo
+          }&schedule_time=`
+        );
 
-      //   sendNotification(
-      //     vendor.fcmToken,
-      //     `...You are Booked...`,
-      //     `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
-      //     "booking"
-      //   );
-      // } catch (err) {
-      //   console.error("Notification failed", err);
-      // }
+        //     sendNotification(
+        //       vendor.fcmToken,
+        //       `...You are Booked...`,
+        //       `Booking Done by ${name.toUpperCase()} on ${formattedBookingDate}`,
+        //       "booking"
+        //     );
+      } catch (err) {
+        console.error("Notification failed", err);
+      }
 
-      res.status(201).json({
-        message: "Booking created successfully",
-
-        bonusAmount: updatedVendorUser.bonusAmount,
-      });
+    res.status(201).json({
+      message: "Booking created successfully",
+      balance: updatedVendorUser.balance,
+      bonusAmount: updatedVendorUser.bonusAmount,
+    });
   } catch (err) {
     console.error("PostV booking error:", err);
     res.status(500).json({ message: "Internal Server Error" });
@@ -347,18 +421,27 @@ async function handleReferralUpdates(
   entityType,
   action,
   commission = 0,
-  averageDiscount = 0
+  averageDiscount = 1
 ) {
   try {
+    // Find the entity (user or vendor)
     let entity;
     if (entityType === "user") {
-      entity = await User.findById(entityId).select("cd shareBy");
+      entity = await User.findById(entityId).select("cd shareBy completed");
     } else {
-      entity = await Vendor.findById(entityId).select("cd shareBy");
+      entity = await Vendor.findById(entityId).select(
+        "cd shareBy completed completedVendor"
+      );
     }
 
-    if (!entity || !entity.shareBy) return;
+    // console.log("Found entity:", entity);
 
+    if (!entity || !entity.shareBy) {
+      console.log("No entity or shareBy found");
+      return;
+    }
+
+    // Determine referrer model based on cd field
     let referrerModel;
     switch (entity.cd) {
       case "user":
@@ -368,30 +451,51 @@ async function handleReferralUpdates(
         referrerModel = Vendor;
         break;
       default:
+        console.log("Invalid cd field:", entity.cd);
         return;
     }
-    console.log(averageDiscount);
+
+    // console.log("Using referrer model for:", entity.cd);
 
     const updateData = {};
+
     if (action === "cancel") {
       updateData.$inc = { pendingShareBy: -1, canceledShareBy: 1 };
     } else if (action === "complete") {
-      const completedOrder =
-        entityType === "vendor"
-          ? await referrerModel.findById(entityId).completedVendor
-          : await referrerModel.findById(entityId).completed;
-      if (completedOrder > 5)
+      // Get the completed count from the correct field
+      const completedCount =
+        entityType === "vendor" ? entity.completedVendor : entity.completed;
+
+      console.log("Completed count:", completedCount);
+
+      // Calculate commission (5% of the commission amount, adjusted by average discount)
+      const referralCommission = commission * 0.05 * averageDiscount;
+
+      if (completedCount > 5) {
         updateData.$inc = {
           pendingShareBy: -1,
           completedShareBy: 1,
-          earning: commission * 0.05 * averageDiscount,
+          earning: referralCommission,
         };
-      else updateData.$inc = { pendingShareBy: -1, completedShareBy: 1 };
+        console.log("Adding commission:", referralCommission);
+      } else {
+        updateData.$inc = { pendingShareBy: -1, completedShareBy: 1 };
+        console.log("No commission - under threshold");
+      }
     } else if (action === "pending") {
       updateData.$inc = { pendingShareBy: 1 };
+    } else {
+      console.error("Invalid action:", action);
+      return;
     }
 
-    await referrerModel.findByIdAndUpdate(entity.shareBy, updateData);
+    // console.log("Updating referrer:", entity.shareBy, "with:", updateData);
+
+    const result = await referrerModel.findByIdAndUpdate(
+      entity.shareBy,
+      updateData
+    );
+    // console.log("Update result:", result ? "Success" : "Failed");
   } catch (error) {
     console.error("Referral update error:", error);
   }
@@ -497,25 +601,25 @@ exports.bookings_controller_cancelU = async (req, res, next) => {
     await handleReferralUpdates(booking.vendorId._id, "vendor", "cancel");
 
     // Send notifications
-    // try {
-    //   await axios.get(
-    //     `${
-    //       process.env.FAST2SMSCANCEL
-    //     }variables_values=${booking.userId.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
-    //       booking.vendorId.phoneNo
-    //     }&schedule_time=`
-    //   );
+    try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSCANCEL
+        }variables_values=${booking.userId.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
+          booking.vendorId.phoneNo
+        }&schedule_time=`
+      );
 
-    //   await sendBookingNotification(
-    //     booking.vendorId._id,
-    //     booking.userId.name,
-    //     formattedDate,
-    //     bookingId,
-    //     "cancel"
-    //   );
-    // } catch (err) {
-    //   console.error("Notification failed", err);
-    // }
+      // await sendBookingNotification(
+      //   booking.vendorId._id,
+      //   booking.userId.name,
+      //   formattedDate,
+      //   bookingId,
+      //   "cancel"
+      // );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
     res.status(200).json({
       message: "Order Cancelled successfully",
@@ -537,7 +641,7 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
 
     const booking = await Bookings.findById(bookingId)
       .populate({ path: "userId", model: "Vendor", select: "_id cd shareBy" })
-      .populate("vendorId", "_id cd shareBy commission fcmToken");
+      .populate("vendorId", "_id cd shareBy commission fcmToken phoneNo");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -569,7 +673,7 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
     );
 
     // Update vendor user balance
-    console.log(booking.userId._id);
+    // console.log(booking.userId._id);
 
     // if (booking.userId._id === booking.vendorId._id) return;
     const updatedVendorUser = await Vendor.findByIdAndUpdate(
@@ -590,27 +694,27 @@ exports.bookings_controller_cancelV = async (req, res, next) => {
     // Handle referral updates
     await handleReferralUpdates(booking.userId._id, "vendor", "cancel");
     await handleReferralUpdates(booking.vendorId._id, "vendor", "cancel");
-
+    console.log(booking.vendorId.phoneNo);
     // Send notifications
-    // try {
-    //   await axios.get(
-    //     `${
-    //       process.env.FAST2SMSCANCEL
-    //     }variables_values=${updatedVendorUser.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
-    //       booking.vendorId.phoneNo
-    //     }&schedule_time=`
-    //   );
+    try {
+      await axios.get(
+        `${
+          process.env.FAST2SMSCANCEL
+        }variables_values=${updatedVendorUser.name.toUpperCase()}%7C${formattedDate}%7C&flash=0&numbers=${
+          booking.vendorId.phoneNo
+        }&schedule_time=`
+      );
 
-    //   await sendBookingNotification(
-    //     booking.vendorId._id,
-    //     updatedVendorUser.name,
-    //     formattedDate,
-    //     bookingId,
-    //     "cancel"
-    //   );
-    // } catch (err) {
-    //   console.error("Notification failed", err);
-    // }
+      // await sendBookingNotification(
+      //   booking.vendorId._id,
+      //   updatedVendorUser.name,
+      //   formattedDate,
+      //   bookingId,
+      //   "cancel"
+      // );
+    } catch (err) {
+      console.error("Notification failed", err);
+    }
 
     res.status(200).json({
       message: "Order Cancelled successfully",
@@ -657,11 +761,11 @@ exports.bookings_controller_completeU = async (req, res, next) => {
     const bookingTime = new Date(booking.bookingDate).getTime();
     const currentTime = Date.now();
 
-    // if (currentTime <= bookingTime) {
-    //   return res.status(400).json({
-    //     message: `You can't mark this Order as completed before ${booking.bookingDate}`,
-    //   });
-    // }
+    if (currentTime <= bookingTime) {
+      return res.status(400).json({
+        message: `You can't mark this Order as completed before ${booking.bookingDate}`,
+      });
+    }
 
     // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(
@@ -676,6 +780,8 @@ exports.bookings_controller_completeU = async (req, res, next) => {
       (discountData.totalDiscount / discountData.transactionCount === 0
         ? 1
         : discountData.transactionCount) * 0.01;
+
+    const av = 1 - averageDiscount;
 
     // Update user stats
     await User.findByIdAndUpdate(booking.userId._id, {
@@ -696,14 +802,14 @@ exports.bookings_controller_completeU = async (req, res, next) => {
       "user",
       "complete",
       booking.vendorId.commission,
-      averageDiscount
+      av
     );
     await handleReferralUpdates(
       booking.vendorId._id,
       "vendor",
       "complete",
       booking.vendorId.commission,
-      averageDiscount
+      av
     );
 
     res.status(200).json({
@@ -747,12 +853,11 @@ exports.bookings_controller_completeV = async (req, res, next) => {
     const bookingTime = new Date(booking.bookingDate).getTime();
     const currentTime = Date.now();
 
-    // if (currentTime <= bookingTime) {
-    //   return res.status(400).json({
-    //     message: `You can't mark this Order as completed before ${booking.bookingDate}`,
-    //   });
-    // }
-
+    if (currentTime <= bookingTime) {
+      return res.status(400).json({
+        message: `You can't mark this Order as completed before ${booking.bookingDate}`,
+      });
+    }
     // Update booking status
     const updatedBooking = await Bookings.findByIdAndUpdate(
       bookingId,
@@ -774,6 +879,8 @@ exports.bookings_controller_completeV = async (req, res, next) => {
         ? 1
         : discountData.transactionCount) * 0.01;
 
+    const av = 1 - averageDiscount;
+
     // Update vendor user stats
     await Vendor.findByIdAndUpdate(booking.userId._id, {
       $inc: { pending: -1, completed: 1 },
@@ -790,17 +897,17 @@ exports.bookings_controller_completeV = async (req, res, next) => {
     // Handle referral updates
     await handleReferralUpdates(
       booking.userId._id,
-      "vendor",
+      "vendorUser",
       "complete",
       booking.vendorId.commission,
-      averageDiscount
+      av
     );
     await handleReferralUpdates(
       booking.vendorId._id,
       "vendor",
       "complete",
       booking.vendorId.commission,
-      averageDiscount
+      av
     );
 
     res.status(200).json({
@@ -827,7 +934,7 @@ async function handleRating(bookingId, rating) {
   );
 
   if (
-    !(currentTime > bookingTime && timeDifference > 16) &&
+    !(currentTime > bookingTime && timeDifference > 16) ||
     !ratingPermission
   ) {
     throw new Error(`You can't rate before 5pm of ${bookingDate}`);

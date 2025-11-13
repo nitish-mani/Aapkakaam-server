@@ -6,6 +6,8 @@ const OtpAuth = require("../models/otpAuth");
 const bcrypt = require("bcryptjs");
 const Share = require("../models/share");
 const Bookings = require("../models/bookings");
+const Attendance = require("../models/attendance");
+const mongoose = require("mongoose");
 require("dotenv").config();
 
 const otp = () => Math.floor(Math.random() * (999999 - 100000 + 1)) + 100000;
@@ -129,7 +131,7 @@ exports.user_controller_verify_phoneNo = async (req, res, next) => {
     const result = await otpRecord.save();
 
     const smsResponse = await axios.get(
-      `${process.env.FAST2SMS}?route=otp&variables_values=${otpM}&flash=0&numbers=${phoneNo}`
+      `${process.env.FAST2SMS}variables_values=${otpM}&flash=0&numbers=${phoneNo}&schedule_time=`
     );
 
     res.status(200).json({
@@ -456,7 +458,7 @@ exports.user_controller_getOrders = async (req, res, next) => {
     }
     const skip = (page - 1) * 12;
     const bookings = await Bookings.find({ userId: userId })
-      .populate("vendorId", "name phoneNo ")
+      .populate("userId", "name phoneNo ")
       .sort({ bookedOn: -1 })
       .skip(skip)
       .lean();
@@ -595,6 +597,279 @@ exports.user_controller_getEarnings = async (req, res, next) => {
     res.json(result);
   } catch (err) {
     console.error("Get one user error:", err);
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
+};
+
+exports.user_controller_getAttendance = async (req, res, next) => {
+  try {
+    const { userId, month, year } = req.params;
+
+    // Input validation
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        message: "Valid User ID is required",
+      });
+    }
+
+    if (!month || !year) {
+      return res.status(400).json({
+        message: "Month and year are required",
+      });
+    }
+
+    // Convert and validate month/year
+    const monthNum = parseInt(month);
+    const yearNum = parseInt(year);
+
+    if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({
+        message: "Month must be a number between 1 and 12",
+      });
+    }
+
+    if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+      return res.status(400).json({
+        message: "Year must be a number between 2000 and 2100",
+      });
+    }
+
+    // Calculate date range for the month
+    const startDate = new Date(yearNum, monthNum - 1, 1);
+    const endDate = new Date(yearNum, monthNum, 0, 23, 59, 59, 999); // Last day of month
+
+    // Format dates for query (handling both string and timestamp formats)
+    const startTimestamp = startDate.getTime();
+    const endTimestamp = endDate.getTime();
+
+    // Find attendance records using timestamp range
+    const attendanceRecords = await Attendance.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      $or: [
+        // Handle string dates (ISO format)
+        {
+          presentDate: {
+            $gte: startDate.toISOString().split("T")[0],
+            $lte: endDate.toISOString().split("T")[0],
+          },
+        },
+        // Handle timestamp format (like 1761676402719)
+        {
+          presentDate: {
+            $gte: startTimestamp,
+            $lte: endTimestamp,
+          },
+        },
+      ],
+    })
+      .populate("userId", "name ")
+      .populate("vendorId", "name")
+      .sort({ presentDate: 1 })
+      .lean()
+      .maxTimeMS(30000); // 30 second timeout
+
+    // If no records found, return empty response with proper structure
+    if (!attendanceRecords || attendanceRecords.length === 0) {
+      const formattedMonth = monthNum.toString().padStart(2, "0");
+      return res.status(200).json({
+        message: `No attendance records found for vendor in ${monthNum}/${yearNum}`,
+        data: [],
+        summary: {
+          totalRecords: 0,
+          presentDays: 0,
+          absentDays: 0,
+          totalTime: 0,
+          averageTimePerDay: 0,
+          pageNo1Completed: 0,
+          pageNo2Completed: 0,
+          pageNo3Completed: 0,
+          month: monthNum,
+          year: yearNum,
+          period: `${yearNum}-${formattedMonth}`,
+          dateRange: {
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+          },
+          averagePagesPerDay: 0,
+          attendanceRate: 0,
+        },
+      });
+    }
+
+    // Process records to handle different date formats
+    const processedRecords = attendanceRecords.map((record) => {
+      let date;
+
+      // Handle timestamp format (like 1761676402719)
+      if (
+        typeof record.presentDate === "number" ||
+        (typeof record.presentDate === "string" &&
+          /^\d+$/.test(record.presentDate))
+      ) {
+        const timestamp = parseInt(record.presentDate);
+        date = new Date(timestamp);
+      }
+      // Handle string date format (like "2024-01-15")
+      else if (typeof record.presentDate === "string") {
+        date = new Date(record.presentDate);
+      }
+      // Handle Date object
+      else if (record.presentDate instanceof Date) {
+        date = record.presentDate;
+      }
+
+      return {
+        ...record,
+        presentDate: date ? date.toISOString() : record.presentDate,
+        day: date ? date.getDate() : null,
+        dayOfWeek: date ? date.getDay() : null,
+      };
+    });
+
+    // Calculate base statistics first
+    const presentRecords = processedRecords.filter(
+      (record) => record.attendance === true
+    );
+    const totalTime = presentRecords.reduce(
+      (total, record) => total + (record.totalTime || 0),
+      0
+    );
+    const pageNo1Completed = processedRecords.filter(
+      (record) => record.pageNo1 === true
+    ).length;
+    const pageNo2Completed = processedRecords.filter(
+      (record) => record.pageNo2 === true
+    ).length;
+    const pageNo3Completed = processedRecords.filter(
+      (record) => record.pageNo3 === true
+    ).length;
+
+    // Calculate derived metrics
+    const averageTimePerDay =
+      presentRecords.length > 0
+        ? Math.round(totalTime / presentRecords.length)
+        : 0;
+    const totalPagesCompleted =
+      pageNo1Completed + pageNo2Completed + pageNo3Completed;
+    const averagePagesPerDay =
+      processedRecords.length > 0
+        ? Math.round((totalPagesCompleted / processedRecords.length) * 100) /
+          100
+        : 0;
+    const attendanceRate =
+      processedRecords.length > 0
+        ? Math.round((presentRecords.length / processedRecords.length) * 100)
+        : 0;
+
+    // Build summary object
+    const summary = {
+      totalRecords: processedRecords.length,
+      presentDays: presentRecords.length,
+      absentDays: processedRecords.filter(
+        (record) => record.attendance === false
+      ).length,
+      totalTime: totalTime,
+      averageTimePerDay: averageTimePerDay,
+      pageNo1Completed: pageNo1Completed,
+      pageNo2Completed: pageNo2Completed,
+      pageNo3Completed: pageNo3Completed,
+      month: monthNum,
+      year: yearNum,
+      period: `${yearNum}-${monthNum.toString().padStart(2, "0")}`,
+      dateRange: {
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+      },
+      // Additional metrics - now calculated before summary initialization
+      averagePagesPerDay: averagePagesPerDay,
+      attendanceRate: attendanceRate,
+      totalPagesCompleted: totalPagesCompleted,
+    };
+
+    res.json({
+      message: "Attendance records retrieved successfully",
+      data: processedRecords,
+      summary: summary,
+      metadata: {
+        userId: userId,
+        recordsCount: processedRecords.length,
+        queryPeriod: `${monthNum}/${yearNum}`,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error("Get vendor attendance error:", err);
+
+    // Handle specific MongoDB errors
+    if (err.name === "CastError") {
+      return res.status(400).json({
+        message: "Invalid vendor ID format",
+      });
+    }
+
+    if (err.name === "MongoTimeoutError") {
+      return res.status(408).json({
+        message: "Database query timeout",
+      });
+    }
+
+    // Default error response
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
+      message: err.message || "Internal server error",
+      error: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    });
+  }
+};
+
+exports.user_controller_postAttendance = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { attendanceData } = req.body;
+    const totalTime =
+      parseInt(attendanceData.time1) +
+      parseInt(attendanceData.time2) +
+      parseInt(attendanceData.time3);
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const isPresentToday = await User.findById(userId).select("presentDate");
+    const targetDate = new Date();
+    const storedDate = new Date(isPresentToday.presentDate);
+
+    const isSameDay =
+      storedDate &&
+      storedDate.getDate() === targetDate.getDate() &&
+      storedDate.getMonth() === targetDate.getMonth() &&
+      storedDate.getFullYear() === targetDate.getFullYear();
+
+    if (isSameDay) {
+      return res
+        .status(200)
+        .json({ message: "Attendance already marked today" });
+    }
+
+    const attendance = new Attendance({
+      userId: userId,
+      attendance: true,
+      totalTime: totalTime,
+      presentDate: Date.now(),
+      pageNo1: true,
+      pageNo2: true,
+      pageNo3: true,
+      attendanceData,
+    });
+    const result = await attendance.save();
+    const presentDate = Date.now();
+    await User.findByIdAndUpdate(userId, { presentDate }, { new: true });
+
+    res.json({ message: "Attendance saved successfully." });
+  } catch (err) {
+    console.error("Attendance error:", err);
     if (!err.statusCode) {
       err.statusCode = 500;
     }

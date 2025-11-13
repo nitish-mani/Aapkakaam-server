@@ -51,16 +51,16 @@ exports.signup = async (req, res, next) => {
     const phoneVerification = await OtpAuth.findById(validPhoneNoId).select(
       "verifiedNumber"
     );
-    // if (!phoneVerification?.verifiedNumber) {
-    //   return res.status(401).json({ message: "Phone number not verified" });
-    // }
+    if (!phoneVerification?.verifiedNumber) {
+      return res.status(401).json({ message: "Phone number not verified" });
+    }
 
     // Check if user already exists
-    // const existingUser = await User.findOne({ phoneNo });
-    // const existingVendor = await Vendor.findOne({ phoneNo });
-    // if (existingUser || existingVendor) {
-    //   return res.status(409).json({ message: "Mobile number already exists!" });
-    // }
+    const existingUser = await User.findOne({ phoneNo });
+    const existingVendor = await Vendor.findOne({ phoneNo });
+    if (existingUser || existingVendor) {
+      return res.status(409).json({ message: "Mobile number already exists!" });
+    }
 
     // Hash password and create user
     const hashedPw = await bcrypt.hash(password, 12);
@@ -73,6 +73,7 @@ exports.signup = async (req, res, next) => {
       fcmToken,
       shareBy: sharedBy,
       cd,
+      balance: 5,
       verifyPhoneNo: true, // Since phone is verified
       agreedToTnCnP: Boolean(agreedToTnCnP),
       accountCreatedOn: new Date(),

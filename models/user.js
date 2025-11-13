@@ -45,6 +45,8 @@ const userSchema = new Schema(
     bookingCount: { type: Number, default: 0 },
     shareCount: { type: Number, default: 0 },
     transactionCount: { type: Number, default: 0 },
+    totalDiscount: { type: Number, default: 0 },
+    presentDate: { type: Date },
   },
   { timestamps: true } // adds createdAt and updatedAt automatically
 );

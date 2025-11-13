@@ -14,9 +14,4 @@ const shareSchema = new Schema({
   shareDate: { type: Date, default: Date.now, index: true },
 });
 
-// // compound indexes for analytics & performance
-// shareSchema.index({ userId: 1, vendorId: 1 });
-// shareSchema.index({ vendorId: 1, status: 1 });
-// shareSchema.index({ phoneNo: 1, status: 1 });
-
 module.exports = mongoose.model("Share", shareSchema);

@@ -108,19 +108,19 @@ exports.signup = async (req, res, next) => {
     }
 
     // Check phone verification
-    // const phoneVerification = await OtpAuth.findById(validPhoneNoId).select(
-    //   "verifiedNumber"
-    // );
-    // if (!phoneVerification?.verifiedNumber) {
-    //   return res.status(401).json({ message: "Phone number not verified" });
-    // }
+    const phoneVerification = await OtpAuth.findById(validPhoneNoId).select(
+      "verifiedNumber"
+    );
+    if (!phoneVerification?.verifiedNumber) {
+      return res.status(401).json({ message: "Phone number not verified" });
+    }
 
     // Check if vendor already exists
-    // const existingUser = await User.findOne({ phoneNo });
-    // const existingVendor = await Vendor.findOne({ phoneNo });
-    // if (existingVendor || existingUser) {
-    //   return res.status(409).json({ message: "Mobile number already exists!" });
-    // }
+    const existingUser = await User.findOne({ phoneNo });
+    const existingVendor = await Vendor.findOne({ phoneNo });
+    if (existingVendor || existingUser) {
+      return res.status(409).json({ message: "Mobile number already exists!" });
+    }
 
     // Calculate commission and initial balance
     const commission = getCommission(type);
@@ -138,7 +138,7 @@ exports.signup = async (req, res, next) => {
       commission,
       wageRate: 0, // Explicitly set default values
       wageRateType: "", // Set default wage rate type
-      balance: initialBalance,
+      balance: initialBalance + 5,
       bonusAmount: 150, // Default bonus amount from schema
       shareBy: sharedBy,
       cd,
