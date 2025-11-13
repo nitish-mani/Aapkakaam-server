@@ -43,7 +43,7 @@ const vendorSchema = new Schema(
     cd: { type: String },
 
     bonusAmount: { type: Number, default: 150 },
-    balance: { type: Number, default: 150 },
+    balance: { type: Number, default: 0 },
 
     fcmToken: String,
     agreedToTnCnP: { type: Boolean, default: false },
@@ -58,6 +58,17 @@ const vendorSchema = new Schema(
     shareCount: { type: Number, default: 0 },
     totalDiscount: { type: Number, default: 0 },
     transactionCount: { type: Number, default: 0 },
+    presentDate: { type: Date },
+
+    userShownContext: {
+      type: Map,
+      of: String,
+      default: {},
+    },
+    lastShownContext: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true } // adds createdAt, updatedAt
 );

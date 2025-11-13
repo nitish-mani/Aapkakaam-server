@@ -546,7 +546,6 @@ exports.vendor_controller_getShare = async (req, res, next) => {
       .limit(limit)
       .lean();
 
-    console.log(shares, total);
     res.status(200).json({ share: shares, total: total });
   } catch (err) {
     console.error("Get share error:", err);
@@ -852,18 +851,14 @@ exports.vendor_controller_getBookings = async (req, res, next) => {
       "i"
     ); // "Wed Oct 22 2025"
 
-    console.log(regexPatterns);
     // Find bookings matching any of the formats
     const bookings = await Bookings.find({
       vendorId: vendorId,
       $or: [{ bookingDate: { $regex: regexPatterns } }],
     })
       .populate("userId", "name phoneNo address")
-      .sort({ bookedOn: -1 })
       .lean();
-
-    const size = Buffer.byteLength(JSON.stringify(bookings));
-    console.log("Response size:", size, "bytes");
+    console.log(bookings);
     res.status(200).json(bookings);
   } catch (err) {
     console.error("Get bookings error:", err);
@@ -1049,13 +1044,14 @@ exports.vendor_controller_getAvailableVendor = async (req, res, next) => {
     const minWageRate = parseFloat(req.params.minWageRate) || 0;
     const limit = 12;
     const commission = getCommission(type);
+
     if (!type || !pincode || !bookingDate) {
       return res
         .status(400)
         .json({ message: "Type, pincode, and booking date are required" });
     }
 
-    // Get vendorIds with bookings on the specified date
+    // Get vendorIds with active bookings on the specified date (excluding canceled orders)
     const bookedVendorIds = await Bookings.distinct("vendorId", {
       type,
       pincode,
@@ -1071,27 +1067,29 @@ exports.vendor_controller_getAvailableVendor = async (req, res, next) => {
       rating: { $gte: minRating },
     };
 
-    // Exclude booked vendors
+    // Exclude only booked vendors
     if (bookedVendorIds.length > 0) {
       baseMatchStage._id = { $nin: bookedVendorIds };
     }
 
     const skip = (page - 1) * limit;
     const requestContext = `${type}-${pincode}-${bookingDate}`;
+    const userIdentifier = req.user?._id
+      ? req.user._id.toString()
+      : `${req.ip}-${req.headers["user-agent"]?.substring(0, 50)}`;
 
-    // STRATEGY 1: Find and claim fresh vendors atomically
-    const session = await Vendor.startSession();
     let vendors = [];
     let totalCount;
 
+    // STRATEGY 1: Fresh vendors for this user context
+    const session = await Vendor.startSession();
     try {
       await session.withTransaction(async () => {
-        // Find fresh vendors and mark them as shown in one operation
         const freshVendors = await Vendor.find({
           ...baseMatchStage,
           $or: [
-            { lastShownContext: { $ne: requestContext } },
-            { lastShownContext: { $exists: false } },
+            { [`userShownContext.${userIdentifier}`]: { $ne: requestContext } },
+            { [`userShownContext.${userIdentifier}`]: { $exists: false } },
           ],
         })
           .session(session)
@@ -1102,13 +1100,20 @@ exports.vendor_controller_getAvailableVendor = async (req, res, next) => {
           .lean();
 
         if (freshVendors.length > 0) {
-          // Mark these vendors as shown for this context
-          await Vendor.updateMany(
-            { _id: { $in: freshVendors.map((v) => v._id) } },
-            { $set: { lastShownContext: requestContext } },
-            { session }
+          const updateOperations = freshVendors.map((vendor) =>
+            Vendor.updateOne(
+              { _id: vendor._id },
+              {
+                $set: {
+                  [`userShownContext.${userIdentifier}`]: requestContext,
+                  lastShownContext: requestContext,
+                },
+              },
+              { session }
+            )
           );
 
+          await Promise.all(updateOperations);
           vendors = freshVendors;
         }
       });
@@ -1116,36 +1121,50 @@ exports.vendor_controller_getAvailableVendor = async (req, res, next) => {
       await session.endSession();
     }
 
-    // Get total count
     totalCount = await Vendor.countDocuments(baseMatchStage);
 
-    // STRATEGY 2: If no fresh vendors, get shuffled available vendors
+    // STRATEGY 2: User-specific previously shown vendors
     if (vendors.length === 0) {
-      const allAvailableVendors = await Vendor.find(baseMatchStage)
+      const userSpecificVendors = await Vendor.find({
+        ...baseMatchStage,
+        [`userShownContext.${userIdentifier}`]: requestContext,
+      })
         .select(
-          "_id name type gender phoneNo rating ratingCount wageRate imgURL"
+          "_id name type gender phoneNo rating ratingCount wageRate wageRateType imgURL"
         )
+        .limit(limit)
         .lean();
 
-      totalCount = allAvailableVendors.length;
+      if (userSpecificVendors.length > 0) {
+        vendors = userSpecificVendors;
+      } else {
+        // STRATEGY 3: Use MongoDB aggregation for random sampling with pagination
+        const randomVendors = await Vendor.aggregate([
+          { $match: baseMatchStage },
+          { $sample: { size: 1000 } }, // Sample larger pool for pagination
+          { $skip: skip },
+          { $limit: limit },
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              type: 1,
+              gender: 1,
+              phoneNo: 1,
+              rating: 1,
+              ratingCount: 1,
+              wageRate: 1,
+              wageRateType: 1,
+              imgURL: 1,
+            },
+          },
+        ]);
 
-      if (allAvailableVendors.length > 0) {
-        // Shuffle using Fisher-Yates algorithm
-        const shuffledVendors = [...allAvailableVendors];
-        for (let i = shuffledVendors.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffledVendors[i], shuffledVendors[j]] = [
-            shuffledVendors[j],
-            shuffledVendors[i],
-          ];
-        }
-
-        // Apply pagination
-        vendors = shuffledVendors.slice(skip, skip + limit);
+        vendors = randomVendors;
       }
     }
 
-    // Format phone numbers for security
+    // Format phone numbers
     const formattedVendors = vendors.map((vendor) => ({
       ...vendor,
       phoneNo: vendor.phoneNo
@@ -1153,11 +1172,13 @@ exports.vendor_controller_getAvailableVendor = async (req, res, next) => {
         : "",
     }));
 
-    // SEND RESPONSE
     res.status(200).json({
       total: totalCount,
       vendors: formattedVendors,
       freshData: vendors.length > 0,
+      currentPage: page,
+      totalPages: Math.ceil(totalCount / limit),
+      hasNextPage: skip + vendors.length < totalCount,
     });
   } catch (err) {
     console.error("Get all vendors error:", err);
@@ -1225,125 +1246,852 @@ exports.vendor_controller_getEarnings = async (req, res, next) => {
   }
 };
 
+// exports.vendor_controller_getAttendance = async (req, res, next) => {
+//   try {
+//     const { vendorId, month, year } = req.params;
+//     console.log("Fetching attendance for:", { vendorId, month, year });
+
+//     // Input validation
+//     if (!vendorId || !mongoose.Types.ObjectId.isValid(vendorId)) {
+//       return res.status(400).json({
+//         message: "Valid Vendor ID is required",
+//       });
+//     }
+
+//     if (!month || !year) {
+//       return res.status(400).json({
+//         message: "Month and year are required",
+//       });
+//     }
+
+//     // Convert and validate month/year
+//     const monthNum = parseInt(month);
+//     const yearNum = parseInt(year);
+
+//     if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+//       return res.status(400).json({
+//         message: "Month must be a number between 1 and 12",
+//       });
+//     }
+
+//     if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+//       return res.status(400).json({
+//         message: "Year must be a number between 2000 and 2100",
+//       });
+//     }
+
+//     // Calculate date range for the month
+//     const startDate = new Date(yearNum, monthNum - 1, 1);
+//     const endDate = new Date(yearNum, monthNum, 0, 23, 59, 59, 999); // Last day of month
+
+//     // Format dates for query (handling both string and timestamp formats)
+//     const startTimestamp = startDate.getTime();
+//     const endTimestamp = endDate.getTime();
+
+//     // Find attendance records using timestamp range
+//     const attendanceRecords = await Attendance.find({
+//       vendorId: new mongoose.Types.ObjectId(vendorId),
+//       $or: [
+//         // Handle string dates (ISO format)
+//         {
+//           presentDate: {
+//             $gte: startDate.toISOString().split("T")[0],
+//             $lte: endDate.toISOString().split("T")[0],
+//           },
+//         },
+//         // Handle timestamp format (like 1761676402719)
+//         {
+//           presentDate: {
+//             $gte: startTimestamp,
+//             $lte: endTimestamp,
+//           },
+//         },
+//       ],
+//     })
+//       .populate("userId", "name ")
+//       .populate("vendorId", "name")
+//       .sort({ presentDate: 1 })
+//       .lean()
+//       .maxTimeMS(30000); // 30 second timeout
+
+//     // If no records found, return empty response with proper structure
+//     if (!attendanceRecords || attendanceRecords.length === 0) {
+//       const formattedMonth = monthNum.toString().padStart(2, "0");
+//       return res.status(200).json({
+//         message: `No attendance records found for vendor in ${monthNum}/${yearNum}`,
+//         data: [],
+//         summary: {
+//           totalRecords: 0,
+//           presentDays: 0,
+//           absentDays: 0,
+//           totalTime: 0,
+//           averageTimePerDay: 0,
+//           pageNo1Completed: 0,
+//           pageNo2Completed: 0,
+//           pageNo3Completed: 0,
+//           month: monthNum,
+//           year: yearNum,
+//           period: `${yearNum}-${formattedMonth}`,
+//           dateRange: {
+//             start: startDate.toISOString(),
+//             end: endDate.toISOString(),
+//           },
+//           averagePagesPerDay: 0,
+//           attendanceRate: 0,
+//         },
+//       });
+//     }
+
+//     // Process records to handle different date formats
+//     const processedRecords = attendanceRecords.map((record) => {
+//       let date;
+
+//       // Handle timestamp format (like 1761676402719)
+//       if (
+//         typeof record.presentDate === "number" ||
+//         (typeof record.presentDate === "string" &&
+//           /^\d+$/.test(record.presentDate))
+//       ) {
+//         const timestamp = parseInt(record.presentDate);
+//         date = new Date(timestamp);
+//       }
+//       // Handle string date format (like "2024-01-15")
+//       else if (typeof record.presentDate === "string") {
+//         date = new Date(record.presentDate);
+//       }
+//       // Handle Date object
+//       else if (record.presentDate instanceof Date) {
+//         date = record.presentDate;
+//       }
+
+//       return {
+//         ...record,
+//         presentDate: date ? date.toISOString() : record.presentDate,
+//         day: date ? date.getDate() : null,
+//         dayOfWeek: date ? date.getDay() : null,
+//       };
+//     });
+
+//     // Calculate base statistics first
+//     const presentRecords = processedRecords.filter(
+//       (record) => record.attendance === true
+//     );
+//     const totalTime = presentRecords.reduce(
+//       (total, record) => total + (record.totalTime || 0),
+//       0
+//     );
+//     const pageNo1Completed = processedRecords.filter(
+//       (record) => record.pageNo1 === true
+//     ).length;
+//     const pageNo2Completed = processedRecords.filter(
+//       (record) => record.pageNo2 === true
+//     ).length;
+//     const pageNo3Completed = processedRecords.filter(
+//       (record) => record.pageNo3 === true
+//     ).length;
+
+//     // Calculate derived metrics
+//     const averageTimePerDay =
+//       presentRecords.length > 0
+//         ? Math.round(totalTime / presentRecords.length)
+//         : 0;
+//     const totalPagesCompleted =
+//       pageNo1Completed + pageNo2Completed + pageNo3Completed;
+//     const averagePagesPerDay =
+//       processedRecords.length > 0
+//         ? Math.round((totalPagesCompleted / processedRecords.length) * 100) /
+//           100
+//         : 0;
+//     const attendanceRate =
+//       processedRecords.length > 0
+//         ? Math.round((presentRecords.length / processedRecords.length) * 100)
+//         : 0;
+
+//     // Build summary object
+//     const summary = {
+//       totalRecords: processedRecords.length,
+//       presentDays: presentRecords.length,
+//       absentDays: processedRecords.filter(
+//         (record) => record.attendance === false
+//       ).length,
+//       totalTime: totalTime,
+//       averageTimePerDay: averageTimePerDay,
+//       pageNo1Completed: pageNo1Completed,
+//       pageNo2Completed: pageNo2Completed,
+//       pageNo3Completed: pageNo3Completed,
+//       month: monthNum,
+//       year: yearNum,
+//       period: `${yearNum}-${monthNum.toString().padStart(2, "0")}`,
+//       dateRange: {
+//         start: startDate.toISOString(),
+//         end: endDate.toISOString(),
+//       },
+//       // Additional metrics - now calculated before summary initialization
+//       averagePagesPerDay: averagePagesPerDay,
+//       attendanceRate: attendanceRate,
+//       totalPagesCompleted: totalPagesCompleted,
+//     };
+
+//     res.json({
+//       message: "Attendance records retrieved successfully",
+//       data: processedRecords,
+//       summary: summary,
+//       metadata: {
+//         vendorId: vendorId,
+//         recordsCount: processedRecords.length,
+//         queryPeriod: `${monthNum}/${yearNum}`,
+//         generatedAt: new Date().toISOString(),
+//       },
+//     });
+//   } catch (err) {
+//     console.error("Get vendor attendance error:", err);
+
+//     // Handle specific MongoDB errors
+//     if (err.name === "CastError") {
+//       return res.status(400).json({
+//         message: "Invalid vendor ID format",
+//       });
+//     }
+
+//     if (err.name === "MongoTimeoutError") {
+//       return res.status(408).json({
+//         message: "Database query timeout",
+//       });
+//     }
+
+//     // Default error response
+//     const statusCode = err.statusCode || 500;
+//     res.status(statusCode).json({
+//       message: err.message || "Internal server error",
+//       error: process.env.NODE_ENV === "development" ? err.stack : undefined,
+//     });
+//   }
+// };
+
 exports.vendor_controller_getAttendance = async (req, res, next) => {
   try {
     const { vendorId, month, year } = req.params;
+    console.log("Fetching attendance for:", { vendorId, month, year });
 
-    if (!vendorId) {
-      return res.status(400).json({ message: "Vendor ID is required" });
-    }
-
-    if (!month || !year) {
-      return res.status(400).json({ message: "Month and year are required" });
-    }
-
-    // Convert month and year to numbers
-    const monthNum = parseInt(month);
-    const yearNum = parseInt(year);
-
-    // Validate month and year
-    if (monthNum < 1 || monthNum > 12) {
-      return res
-        .status(400)
-        .json({ message: "Month must be between 1 and 12" });
-    }
-
-    if (yearNum < 2000 || yearNum > 2100) {
-      return res
-        .status(400)
-        .json({ message: "Year must be between 2000 and 2100" });
-    }
-
-    // Format month to have leading zero if needed (for string comparison with presentDate)
-    const formattedMonth = monthNum.toString().padStart(2, "0");
-
-    // Create a regex pattern to match dates in the format YYYY-MM-DD for the specific month and year
-    // This will match dates like "2024-01-01", "2024-01-15", etc. for January 2024
-    const datePattern = new RegExp(`^${yearNum}-${formattedMonth}-\\d{2}$`);
-
-    // Find attendance records for the vendor within the specified month and year
-    const attendanceRecords = await Attendance.find({
-      vendorId: new mongoose.Types.ObjectId(vendorId),
-      presentDate: datePattern,
-    })
-      .populate("userId", "name email") // Populate user details if needed
-      .populate("vendorId", "vendorName") // Populate vendor details if needed
-      .sort({ presentDate: 1 }) // Sort by date ascending
-      .lean();
-
-    if (!attendanceRecords || attendanceRecords.length === 0) {
-      return res.status(404).json({
-        message: `No attendance records found for vendor ${vendorId} in ${month}/${year}`,
-        data: [],
-        summary: {
-          totalRecords: 0,
-          presentDays: 0,
-          absentDays: 0,
-          totalTime: 0,
-          month: monthNum,
-          year: yearNum,
-          period: `${yearNum}-${formattedMonth}`,
-        },
+    // Input validation
+    if (!vendorId || !mongoose.Types.ObjectId.isValid(vendorId)) {
+      return res.status(400).json({
+        message: "Valid Vendor ID is required",
       });
     }
 
-    // Calculate summary statistics
-    const summary = {
-      totalRecords: attendanceRecords.length,
-      presentDays: attendanceRecords.filter(
-        (record) => record.attendance === true
-      ).length,
-      absentDays: attendanceRecords.filter(
-        (record) => record.attendance === false
-      ).length,
-      totalTime: attendanceRecords.reduce(
-        (total, record) => total + (record.totalTime || 0),
-        0
-      ),
-      pageNo1Completed: attendanceRecords.filter(
-        (record) => record.pageNo1 === true
-      ).length,
-      pageNo2Completed: attendanceRecords.filter(
-        (record) => record.pageNo2 === true
-      ).length,
-      pageNo3Completed: attendanceRecords.filter(
-        (record) => record.pageNo3 === true
-      ).length,
-      month: monthNum,
-      year: yearNum,
-      period: `${yearNum}-${formattedMonth}`,
-    };
+    if (!month || !year) {
+      return res.status(400).json({
+        message: "Month and year are required",
+      });
+    }
 
-    // Calculate average time per day (in minutes)
-    summary.averageTimePerDay =
-      summary.presentDays > 0
-        ? Math.round(summary.totalTime / summary.presentDays)
+    // Convert and validate month/year
+    const monthNum = parseInt(month);
+    const yearNum = parseInt(year);
+
+    if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({
+        message: "Month must be a number between 1 and 12",
+      });
+    }
+
+    if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+      return res.status(400).json({
+        message: "Year must be a number between 2000 and 2100",
+      });
+    }
+
+    // Get vendor account creation date
+    const vendor = await Vendor.findById(vendorId)
+      .select("accountCreatedOn")
+      .lean();
+    if (!vendor) {
+      return res.status(404).json({
+        message: "Vendor not found",
+      });
+    }
+
+    const accountCreatedOn = new Date(vendor.accountCreatedOn);
+    accountCreatedOn.setHours(0, 0, 0, 0); // Normalize to start of day
+    console.log("Account created on:", accountCreatedOn.toISOString());
+
+    // Calculate date range for the requested month
+    const startDate = new Date(yearNum, monthNum - 1, 1);
+    const endDate = new Date(yearNum, monthNum, 0, 23, 59, 59, 999); // Last day of month
+    const totalDaysInMonth = endDate.getDate();
+
+    // Get current date (today)
+    const currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+
+    console.log(
+      "Month range:",
+      startDate.toISOString(),
+      "to",
+      endDate.toISOString()
+    );
+    console.log("Current date:", currentDate.toISOString());
+
+    // Determine the effective date range for this vendor
+    const effectiveStartDate = new Date(
+      Math.max(startDate.getTime(), accountCreatedOn.getTime())
+    );
+    const effectiveEndDate = new Date(
+      Math.min(endDate.getTime(), currentDate.getTime())
+    );
+
+    effectiveStartDate.setHours(0, 0, 0, 0);
+    effectiveEndDate.setHours(23, 59, 59, 999);
+
+    console.log(
+      "Effective range:",
+      effectiveStartDate.toISOString(),
+      "to",
+      effectiveEndDate.toISOString()
+    );
+
+    // Calculate total valid days (days when vendor could have marked attendance)
+    const totalValidDays = calculateDaysBetween(
+      effectiveStartDate,
+      effectiveEndDate
+    );
+    console.log("Total valid days:", totalValidDays);
+
+    // Build query for attendance records - search for records in the entire month
+    const attendanceRecords = await Attendance.find({
+      vendorId: new mongoose.Types.ObjectId(vendorId),
+      $or: [
+        // For string dates (ISO format YYYY-MM-DD)
+        {
+          presentDate: {
+            $gte: startDate.toISOString().split("T")[0],
+            $lte: endDate.toISOString().split("T")[0],
+          },
+        },
+        // For timestamp format
+        {
+          presentDate: {
+            $gte: startDate.getTime(),
+            $lte: endDate.getTime(),
+          },
+        },
+        // For Date objects
+        {
+          presentDate: {
+            $gte: startDate,
+            $lte: endDate,
+          },
+        },
+      ],
+    })
+      .populate("userId", "name")
+      .populate("vendorId", "name")
+      .sort({ presentDate: 1 })
+      .lean()
+      .maxTimeMS(30000);
+
+    console.log(`Found ${attendanceRecords.length} attendance records`);
+
+    // Process records and normalize dates
+    const processedRecords = attendanceRecords.map((record) => {
+      let date = normalizeDate(record.presentDate);
+      let status = determineAttendanceStatus(record);
+
+      return {
+        ...record,
+        presentDate: date ? date.toISOString() : record.presentDate,
+        date: date ? date.toISOString().split("T")[0] : null, // YYYY-MM-DD format
+        day: date ? date.getDate() : null,
+        dayOfWeek: date ? date.getDay() : null,
+        status: status,
+        markedAbsent: record.markedAbsent || false,
+        isWithinValidPeriod: date
+          ? isDateInRange(date, effectiveStartDate, effectiveEndDate)
+          : false,
+      };
+    });
+
+    // Filter records that are within the valid period
+    const validRecords = processedRecords.filter(
+      (record) => record.isWithinValidPeriod
+    );
+
+    // Separate present and absent records
+    const presentRecords = validRecords.filter(
+      (record) => record.status === "present"
+    );
+    const absentRecords = validRecords.filter(
+      (record) => record.status === "absent"
+    );
+
+    // Calculate statistics
+    const totalTime = presentRecords.reduce(
+      (total, record) => total + (record.totalTime || 0),
+      0
+    );
+    const pageNo1Completed = validRecords.filter(
+      (record) => record.pageNo1 === true
+    ).length;
+    const pageNo2Completed = validRecords.filter(
+      (record) => record.pageNo2 === true
+    ).length;
+    const pageNo3Completed = validRecords.filter(
+      (record) => record.pageNo3 === true
+    ).length;
+
+    // Calculate days with no records (true absent days)
+    const recordedDates = new Set();
+    validRecords.forEach((record) => {
+      if (record.date) {
+        recordedDates.add(record.date);
+      }
+    });
+
+    const trueAbsentDays = Math.max(0, totalValidDays - recordedDates.size);
+
+    console.log("Statistics:", {
+      totalValidDays,
+      presentRecords: presentRecords.length,
+      absentRecords: absentRecords.length,
+      trueAbsentDays,
+      recordedDates: recordedDates.size,
+    });
+
+    // Generate complete monthly calendar
+    const monthlyCalendar = generateMonthlyCalendar(
+      yearNum,
+      monthNum,
+      processedRecords,
+      accountCreatedOn,
+      currentDate,
+      effectiveStartDate,
+      effectiveEndDate
+    );
+
+    // Calculate derived metrics
+    const averageTimePerDay =
+      presentRecords.length > 0
+        ? Math.round(totalTime / presentRecords.length)
+        : 0;
+    const totalPagesCompleted =
+      pageNo1Completed + pageNo2Completed + pageNo3Completed;
+    const averagePagesPerDay =
+      validRecords.length > 0
+        ? Math.round((totalPagesCompleted / validRecords.length) * 100) / 100
         : 0;
 
+    // Calculate rates based on total valid days
+    const attendanceRate =
+      totalValidDays > 0
+        ? Math.round((presentRecords.length / totalValidDays) * 100)
+        : 0;
+    const absenceRate =
+      totalValidDays > 0
+        ? Math.round(
+            ((absentRecords.length + trueAbsentDays) / totalValidDays) * 100
+          )
+        : 0;
+
+    // Build comprehensive summary
+    const summary = buildSummary(
+      totalDaysInMonth,
+      totalValidDays,
+      validRecords.length,
+      presentRecords.length,
+      absentRecords.length,
+      trueAbsentDays,
+      totalTime,
+      averageTimePerDay,
+      pageNo1Completed,
+      pageNo2Completed,
+      pageNo3Completed,
+      monthNum,
+      yearNum,
+      averagePagesPerDay,
+      attendanceRate,
+      absenceRate,
+      totalPagesCompleted,
+      accountCreatedOn,
+      effectiveStartDate,
+      effectiveEndDate,
+      startDate,
+      endDate
+    );
+
+    // Handle edge cases
+    if (totalValidDays === 0) {
+      return handleNoValidDays(
+        res,
+        monthNum,
+        yearNum,
+        monthlyCalendar,
+        summary,
+        accountCreatedOn,
+        startDate,
+        endDate,
+        currentDate
+      );
+    }
+
+    if (validRecords.length === 0 && totalValidDays > 0) {
+      return handleNoRecordsButValidDays(
+        res,
+        monthNum,
+        yearNum,
+        monthlyCalendar,
+        summary,
+        totalValidDays
+      );
+    }
+
+    // Successful response
     res.json({
       message: "Attendance records retrieved successfully",
-      data: attendanceRecords,
+      data: processedRecords,
+      monthlyCalendar: monthlyCalendar,
       summary: summary,
+      metadata: {
+        vendorId: vendorId,
+        recordsCount: validRecords.length,
+        queryPeriod: `${monthNum}/${yearNum}`,
+        generatedAt: new Date().toISOString(),
+        totalValidDays: totalValidDays,
+        statusBreakdown: {
+          present: presentRecords.length,
+          markedAbsent: absentRecords.length,
+          noRecordAbsent: trueAbsentDays,
+          future: monthlyCalendar.filter((day) => day.status === "future")
+            .length,
+          beforeAccount: monthlyCalendar.filter(
+            (day) => day.status === "before-account"
+          ).length,
+        },
+      },
     });
   } catch (err) {
     console.error("Get vendor attendance error:", err);
-    if (!err.statusCode) {
-      err.statusCode = 500;
-    }
-    next(err);
+    return handleError(err, res);
   }
 };
+
+// Helper functions
+
+function normalizeDate(dateValue) {
+  if (!dateValue) return null;
+
+  let date;
+
+  // Handle timestamp format
+  if (
+    typeof dateValue === "number" ||
+    (typeof dateValue === "string" && /^\d+$/.test(dateValue))
+  ) {
+    date = new Date(parseInt(dateValue));
+  }
+  // Handle string date format
+  else if (typeof dateValue === "string") {
+    date = new Date(dateValue);
+  }
+  // Handle Date object
+  else if (dateValue instanceof Date) {
+    date = new Date(dateValue);
+  }
+
+  if (date && !isNaN(date.getTime())) {
+    date.setHours(0, 0, 0, 0); // Normalize to start of day
+    return date;
+  }
+
+  return null;
+}
+
+function determineAttendanceStatus(record) {
+  if (record.attendance === true) {
+    return "present";
+  } else if (record.attendance === false || record.markedAbsent === true) {
+    return "absent";
+  } else {
+    // If no explicit attendance flag, check activity
+    return record.totalTime && record.totalTime > 0 ? "present" : "absent";
+  }
+}
+
+function isDateInRange(date, startDate, endDate) {
+  return date >= startDate && date <= endDate;
+}
+
+function calculateDaysBetween(startDate, endDate) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+
+  const timeDiff = end.getTime() - start.getTime();
+  const dayDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1; // +1 to include both start and end dates
+  return Math.max(0, dayDiff);
+}
+
+function generateMonthlyCalendar(
+  year,
+  month,
+  records,
+  accountCreatedOn,
+  currentDate,
+  effectiveStartDate,
+  effectiveEndDate
+) {
+  const totalDays = new Date(year, month, 0).getDate();
+  const calendar = [];
+
+  for (let day = 1; day <= totalDays; day++) {
+    const date = new Date(year, month - 1, day);
+    date.setHours(0, 0, 0, 0);
+
+    const existingRecord = records.find((record) => {
+      const recordDate = normalizeDate(record.presentDate);
+      return recordDate && recordDate.getTime() === date.getTime();
+    });
+
+    let status = "no-record";
+    let category = "active";
+
+    // Determine category and status
+    if (date < accountCreatedOn) {
+      status = "before-account";
+      category = "inactive";
+    } else if (date > currentDate) {
+      status = "future";
+      category = "inactive";
+    } else if (date < effectiveStartDate || date > effectiveEndDate) {
+      status = "outside-range";
+      category = "inactive";
+    } else if (existingRecord) {
+      status = existingRecord.status;
+      category = "active";
+    } else {
+      status = "absent"; // Valid day with no record
+      category = "active";
+    }
+
+    calendar.push({
+      day: day,
+      date: date.toISOString().split("T")[0],
+      dayOfWeek: date.getDay(),
+      status: status,
+      category: category,
+      record: existingRecord || null,
+      isActivePeriod: category === "active",
+    });
+  }
+
+  return calendar;
+}
+
+function buildSummary(
+  totalDaysInMonth,
+  totalValidDays,
+  totalRecords,
+  presentDays,
+  absentDays,
+  trueAbsentDays,
+  totalTime,
+  averageTimePerDay,
+  pageNo1Completed,
+  pageNo2Completed,
+  pageNo3Completed,
+  month,
+  year,
+  averagePagesPerDay,
+  attendanceRate,
+  absenceRate,
+  totalPagesCompleted,
+  accountCreatedOn,
+  effectiveStartDate,
+  effectiveEndDate,
+  startDate,
+  endDate
+) {
+  return {
+    // Basic counts
+    totalDaysInMonth: totalDaysInMonth,
+    totalValidDays: totalValidDays,
+    totalRecords: totalRecords,
+
+    // Attendance breakdown
+    presentDays: presentDays,
+    recordedAbsentDays: absentDays,
+    trueAbsentDays: trueAbsentDays,
+    totalAbsentDays: absentDays + trueAbsentDays,
+
+    // Time and pages
+    totalTime: totalTime,
+    averageTimePerDay: averageTimePerDay,
+    pageNo1Completed: pageNo1Completed,
+    pageNo2Completed: pageNo2Completed,
+    pageNo3Completed: pageNo3Completed,
+    totalPagesCompleted: totalPagesCompleted,
+    averagePagesPerDay: averagePagesPerDay,
+
+    // Rates and ratios
+    attendanceRate: attendanceRate,
+    absenceRate: absenceRate,
+    workingDaysRatio: `${presentDays}/${totalValidDays}`,
+
+    // Date information
+    month: month,
+    year: year,
+    period: `${year}-${month.toString().padStart(2, "0")}`,
+    accountCreatedOn: accountCreatedOn.toISOString(),
+    effectiveStartDate: effectiveStartDate.toISOString(),
+    effectiveEndDate: effectiveEndDate.toISOString(),
+    dateRange: {
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+    },
+
+    // Additional metrics
+    absenceBreakdown: {
+      markedAbsent: absentDays,
+      noRecordAbsent: trueAbsentDays,
+    },
+  };
+}
+
+function handleNoValidDays(
+  res,
+  monthNum,
+  yearNum,
+  monthlyCalendar,
+  summary,
+  accountCreatedOn,
+  startDate,
+  endDate,
+  currentDate
+) {
+  let message = "No valid days in selected period";
+
+  if (accountCreatedOn > endDate) {
+    message = "Selected month is before account creation date";
+  } else if (startDate > currentDate) {
+    message = "Selected month is in the future";
+  }
+
+  return res.status(200).json({
+    message: message,
+    data: [],
+    monthlyCalendar: monthlyCalendar,
+    summary: {
+      ...summary,
+      totalRecords: 0,
+      presentDays: 0,
+      recordedAbsentDays: 0,
+      trueAbsentDays: 0,
+      totalAbsentDays: 0,
+      totalTime: 0,
+      averageTimePerDay: 0,
+      pageStats: {
+        pageNo1Completed: 0,
+        pageNo2Completed: 0,
+        pageNo3Completed: 0,
+      },
+      averagePagesPerDay: 0,
+      attendanceRate: 0,
+      absenceRate: 0,
+      totalPagesCompleted: 0,
+      workingDaysRatio: `0/0`,
+      absenceBreakdown: { markedAbsent: 0, noRecordAbsent: 0 },
+    },
+  });
+}
+
+function handleNoRecordsButValidDays(
+  res,
+  monthNum,
+  yearNum,
+  monthlyCalendar,
+  summary,
+  totalValidDays
+) {
+  return res.status(200).json({
+    message: `No attendance records found for vendor in ${monthNum}/${yearNum}`,
+    data: [],
+    monthlyCalendar: monthlyCalendar,
+    summary: {
+      ...summary,
+      totalRecords: 0,
+      presentDays: 0,
+      recordedAbsentDays: 0,
+      trueAbsentDays: totalValidDays,
+      totalAbsentDays: totalValidDays,
+      totalTime: 0,
+      averageTimePerDay: 0,
+      pageNo1Completed: 0,
+      pageNo2Completed: 0,
+      pageNo3Completed: 0,
+      averagePagesPerDay: 0,
+      attendanceRate: 0,
+      absenceRate: 100,
+      totalPagesCompleted: 0,
+      workingDaysRatio: `0/${totalValidDays}`,
+      absenceBreakdown: {
+        markedAbsent: 0,
+        noRecordAbsent: totalValidDays,
+      },
+    },
+  });
+}
+
+function handleError(err, res) {
+  if (err.name === "CastError") {
+    return res.status(400).json({
+      message: "Invalid vendor ID format",
+    });
+  }
+
+  if (err.name === "MongoTimeoutError") {
+    return res.status(408).json({
+      message: "Database query timeout",
+    });
+  }
+
+  const statusCode = err.statusCode || 500;
+  return res.status(statusCode).json({
+    message: err.message || "Internal server error",
+    error: process.env.NODE_ENV === "development" ? err.stack : undefined,
+  });
+}
 
 exports.vendor_controller_postAttendance = async (req, res, next) => {
   try {
     const { vendorId } = req.params;
     const { attendanceData } = req.body;
     const totalTime =
-      attendanceData.time1 + attendanceData.time2 + attendanceData.time3;
-
+      parseInt(attendanceData.time1) +
+      parseInt(attendanceData.time2) +
+      parseInt(attendanceData.time3);
+    console.log(totalTime);
     if (!vendorId) {
       return res.status(400).json({ message: "Vendor ID is required" });
     }
+    const isPresentToday = await Vendor.findById(vendorId).select(
+      "presentDate"
+    );
+    const targetDate = new Date();
+    const storedDate = new Date(isPresentToday.presentDate);
+
+    const isSameDay =
+      storedDate &&
+      storedDate.getDate() === targetDate.getDate() &&
+      storedDate.getMonth() === targetDate.getMonth() &&
+      storedDate.getFullYear() === targetDate.getFullYear();
+
+    if (isSameDay) {
+      return res
+        .status(200)
+        .json({ message: "Attendance already marked today" });
+    }
+
     const attendance = new Attendance({
       vendorId: vendorId,
       attendance: true,
@@ -1352,9 +2100,11 @@ exports.vendor_controller_postAttendance = async (req, res, next) => {
       pageNo1: true,
       pageNo2: true,
       pageNo3: true,
-      attendanceData
+      attendanceData,
     });
     const result = await attendance.save();
+    const presentDate = Date.now();
+    await Vendor.findByIdAndUpdate(vendorId, { presentDate }, { new: true });
 
     res.json({ message: "Attendance saved successfully." });
   } catch (err) {

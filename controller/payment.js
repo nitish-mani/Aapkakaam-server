@@ -34,7 +34,6 @@ const payment_verification = async (req, res, next) => {
     discountPercent,
   } = req.body;
 
-  console.log(balance, discountPercent);
   const generated_signature = crypto
     .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
     .update(razorpay_order_id + "|" + razorpay_payment_id)
@@ -74,6 +73,46 @@ const payment_verification = async (req, res, next) => {
             payment_id: razorpay_payment_id,
             order_id: razorpay_order_id,
             balance: loadedVendor.balance,
+          });
+        })
+        .catch((err) => {
+          if (!err.statusCode) {
+            err.statusCode = 500;
+          }
+          next(err);
+        });
+    } else if (userId != null) {
+      const transaction = new Transaction({
+        userId,
+        amount: balance,
+        discount: discountPercent,
+      });
+      const result = await transaction.save();
+
+      User.findByIdAndUpdate(
+        userId,
+        {
+          $inc: {
+            balance: balance,
+            transactionCount: 1,
+            totalDiscount: discountPercent,
+          },
+        },
+        { new: true }
+      )
+
+        .then((result) => {
+          if (!result) {
+            const error = new Error("Could not find User.");
+            error.statusCode = 404;
+            throw error;
+          }
+          loadedUser = result;
+          res.json({
+            success: true,
+            payment_id: razorpay_payment_id,
+            order_id: razorpay_order_id,
+            balance: loadedUser.balance,
           });
         })
         .catch((err) => {
